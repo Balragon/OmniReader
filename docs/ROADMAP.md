@@ -18,10 +18,10 @@ S1 실패(R8 불통과 또는 광범위 crash) 시 Mammoth.js WebView sandbox �
 
 ## Phase 2 — P0 구현
 
-- P0-1 SAF vault (S4 승격) — Codex
-- P0-2 Markdown shell (S5 결과 반영) — Codex
+- P0-1 SAF vault (S4 승격) — ✅ 완료 (VaultSetupScreen, 실기기 확인 잔여)
+- P0-2 Markdown shell (S5 결과 반영) — ✅ 완료 (FileList/EditorShell/DOCX 가져오기, 실기기 dogfooding 대기)
 - P0-3 DOCX import 파이프라인 — ✅ 완료 (DocxToMarkdownImporter + 테스트)
-- P0-4 Second Brain 최소 연동 — Codex
+- P0-4 Second Brain 최소 연동 — ⏸ 스펙 확정 필요 (사용자 정의 대기)
 - P0-2 완료 시점부터 실기기 dogfooding 시작, friction log 기록
 
 ## Phase 3 — P1 (dogfooding friction 순서대로)
