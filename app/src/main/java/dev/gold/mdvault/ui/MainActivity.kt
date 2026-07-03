@@ -1,5 +1,6 @@
 package dev.gold.mdvault.ui
 
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -14,7 +15,9 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -28,28 +31,161 @@ import dev.gold.mdvault.editor.ComposeEditorPort
 import dev.gold.mdvault.editor.MarkdownEditorScreen
 import dev.gold.mdvault.editor.s5KoreanSample
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileNotFoundException
 
 class MainActivity : ComponentActivity() {
-    private val container = AppContainer()
+    private val container: AppContainer by lazy(LazyThreadSafetyMode.NONE) {
+        AppContainer(applicationContext)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    SpikeHome(container)
+                    MdvaultApp(container)
                 }
             }
         }
     }
 }
 
+private enum class Screen {
+    VaultSetup,
+    Home,
+    Editor,
+    Spike,
+}
+
+private sealed interface VaultState {
+    data object Loading : VaultState
+    data class Ready(val treeUri: Uri?) : VaultState
+}
+
+@Composable
+private fun MdvaultApp(container: AppContainer) {
+    val vaultState by container.vaultRepository.vaultTreeUri
+        .map<Uri?, VaultState> { VaultState.Ready(it) }
+        .collectAsState(initial = VaultState.Loading)
+    var screen by remember { mutableStateOf<Screen?>(null) }
+    var directoryBackStack by remember { mutableStateOf(listOf("")) }
+    var editorPath by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(vaultState) {
+        val ready = vaultState as? VaultState.Ready ?: return@LaunchedEffect
+        if (screen == null) {
+            screen = if (ready.treeUri == null) Screen.VaultSetup else Screen.Home
+        }
+        if (ready.treeUri == null) {
+            screen = Screen.VaultSetup
+            directoryBackStack = listOf("")
+            editorPath = null
+        }
+    }
+
+    when (val state = vaultState) {
+        VaultState.Loading -> LoadingScreen()
+        is VaultState.Ready -> when (screen ?: if (state.treeUri == null) Screen.VaultSetup else Screen.Home) {
+            Screen.VaultSetup -> VaultSetupScreen(
+                vaultRepository = container.vaultRepository,
+                vaultTreeUri = state.treeUri,
+                onVaultSelected = {
+                    directoryBackStack = listOf("")
+                    editorPath = null
+                    screen = Screen.Home
+                },
+            )
+            Screen.Home -> HomeScreen(
+                vaultTreeUri = state.treeUri,
+                container = container,
+                currentDirectory = directoryBackStack.last(),
+                canNavigateUp = directoryBackStack.size > 1,
+                onNavigateUp = {
+                    if (directoryBackStack.size > 1) {
+                        directoryBackStack = directoryBackStack.dropLast(1)
+                    }
+                },
+                onOpenDirectory = { path ->
+                    directoryBackStack = directoryBackStack + path
+                },
+                onOpenFile = { path ->
+                    editorPath = path
+                    screen = Screen.Editor
+                },
+                onOpenVaultSetup = { screen = Screen.VaultSetup },
+                onOpenSpike = { screen = Screen.Spike },
+            )
+            Screen.Editor -> {
+                val path = editorPath
+                if (path == null) {
+                    LoadingScreen()
+                } else {
+                    EditorShellScreen(
+                        vaultRepository = container.vaultRepository,
+                        relativePath = path,
+                        onBack = { screen = Screen.Home },
+                    )
+                }
+            }
+            Screen.Spike -> SpikeHome(
+                container = container,
+                onBackToHome = { screen = Screen.Home },
+            )
+        }
+    }
+}
+
+@Composable
+private fun LoadingScreen() {
+    Column(
+        modifier = Modifier.fillMaxSize().padding(24.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Text(
+            text = "볼트 상태 확인 중…",
+            style = MaterialTheme.typography.bodyLarge,
+        )
+    }
+}
+
+@Composable
+private fun HomeScreen(
+    vaultTreeUri: Uri?,
+    container: AppContainer,
+    currentDirectory: String,
+    canNavigateUp: Boolean,
+    onNavigateUp: () -> Unit,
+    onOpenDirectory: (String) -> Unit,
+    onOpenFile: (String) -> Unit,
+    onOpenVaultSetup: () -> Unit,
+    onOpenSpike: () -> Unit,
+) {
+    if (vaultTreeUri == null) {
+        LoadingScreen()
+        return
+    }
+    FileListScreen(
+        vaultRepository = container.vaultRepository,
+        docxToMarkdownImporter = container.docxToMarkdownImporter,
+        currentDirectory = currentDirectory,
+        canNavigateUp = canNavigateUp,
+        onNavigateUp = onNavigateUp,
+        onOpenDirectory = onOpenDirectory,
+        onOpenFile = onOpenFile,
+        onOpenVaultSetup = onOpenVaultSetup,
+        onOpenSpike = onOpenSpike,
+    )
+}
+
 /** spike 하네스 홈: S1 import 측정 / S5 에디터 판정 전환. */
 @Composable
-private fun SpikeHome(container: AppContainer) {
+private fun SpikeHome(
+    container: AppContainer,
+    onBackToHome: () -> Unit,
+) {
     var screen by remember { mutableStateOf("s1") }
     val editorPort = remember { ComposeEditorPort(s5KoreanSample()) }
 
@@ -58,6 +194,7 @@ private fun SpikeHome(container: AppContainer) {
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            Button(onClick = onBackToHome) { Text("Home") }
             Button(onClick = { screen = "s1" }) { Text("S1 Import") }
             Button(onClick = { screen = "s5" }) { Text("S5 Editor") }
         }

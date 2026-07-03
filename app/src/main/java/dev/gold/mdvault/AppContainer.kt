@@ -8,11 +8,15 @@ import dev.gold.mdvault.docx.SimpleOoxmlDocxExportEngine
 import dev.gold.mdvault.markdown.FlexmarkMarkdownEngine
 import dev.gold.mdvault.markdown.JsoupHtmlCleaner
 import dev.gold.mdvault.markdown.MarkdownEngine
+import dev.gold.mdvault.storage.VaultRepository
 
 /**
  * 수동 DI 컨테이너. Hilt 금지 (CLAUDE.md 아키텍처 규칙).
  */
-class AppContainer {
+class AppContainer(context: android.content.Context) {
+    private val applicationContext = context.applicationContext
+
+    val vaultRepository: VaultRepository = VaultRepository(applicationContext)
     val htmlCleaner: JsoupHtmlCleaner = JsoupHtmlCleaner()
     val markdownEngine: MarkdownEngine = FlexmarkMarkdownEngine(htmlCleaner)
     val docxImportEngine: DocxImportEngine = MammothDocxImportEngine()
