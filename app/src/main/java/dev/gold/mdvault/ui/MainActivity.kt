@@ -30,6 +30,7 @@ import dev.gold.mdvault.AppContainer
 import dev.gold.mdvault.editor.ComposeEditorPort
 import dev.gold.mdvault.editor.MarkdownEditorScreen
 import dev.gold.mdvault.editor.s5KoreanSample
+import dev.gold.mdvault.preview.MarkdownReaderScreen
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -56,6 +57,7 @@ class MainActivity : ComponentActivity() {
 private enum class Screen {
     VaultSetup,
     Home,
+    Reader,
     Editor,
     Spike,
 }
@@ -113,11 +115,26 @@ private fun MdvaultApp(container: AppContainer) {
                 },
                 onOpenFile = { path ->
                     editorPath = path
-                    screen = Screen.Editor
+                    screen = Screen.Reader
                 },
                 onOpenVaultSetup = { screen = Screen.VaultSetup },
                 onOpenSpike = { screen = Screen.Spike },
             )
+            Screen.Reader -> {
+                val path = editorPath
+                if (path == null) {
+                    LoadingScreen()
+                } else {
+                    MarkdownReaderScreen(
+                        vaultRepository = container.vaultRepository,
+                        markdownEngine = container.markdownEngine,
+                        relativePath = path,
+                        onEdit = { screen = Screen.Editor },
+                        onBack = { screen = Screen.Home },
+                        onOpenNote = { notePath -> editorPath = notePath },
+                    )
+                }
+            }
             Screen.Editor -> {
                 val path = editorPath
                 if (path == null) {
@@ -126,7 +143,7 @@ private fun MdvaultApp(container: AppContainer) {
                     EditorShellScreen(
                         vaultRepository = container.vaultRepository,
                         relativePath = path,
-                        onBack = { screen = Screen.Home },
+                        onBack = { screen = Screen.Reader },
                     )
                 }
             }

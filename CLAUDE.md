@@ -2,8 +2,10 @@
 
 ## 프로젝트 정의
 
-개인용 Android Markdown vault 앱. LLM/DOCX 산출물을 Markdown으로 흡수하고,
-필요할 때 제한된 DOCX를 새로 생성한다. **Markdown(.md)이 canonical 포맷**이며
+개인용 Android Markdown vault 앱. **핵심 목표는 문서를 읽는 앱**이다 —
+LLM/DOCX 산출물을 Markdown으로 흡수해 잘 읽히게 보여주고, 필요할 때만
+편집하거나 제한된 DOCX를 새로 생성한다. Second Brain 등 외부 서비스 연동은
+하지 않는다 (2026-07-03 확정). **Markdown(.md)이 canonical 포맷**이며
 DOCX는 import/export gateway다. **원본 DOCX는 절대 자동 덮어쓰지 않는다.**
 
 ## 1. 스택
@@ -18,12 +20,11 @@ DOCX는 import/export gateway다. **원본 DOCX는 절대 자동 덮어쓰지 �
 - 단일 모듈 (`:app`), 패키지 경계 엄수:
   - `ui/` — 공통 UI, 네비게이션, 테마
   - `editor/` — Markdown 편집기 (EditorPort 인터페이스 뒤에 구현 격리)
-  - `preview/` — Markdown 렌더링/미리보기
+  - `preview/` — Markdown 렌더링/읽기 화면 (핵심 동선)
   - `document/` — 문서 도메인 모델, import/export 파이프라인 조립
   - `storage/` — SAF 기반 vault 접근 (DocumentsContract 직접 사용)
   - `markdown/` — flexmark 기반 변환 엔진 (순수 JVM)
   - `docx/` — DOCX import(Mammoth)/export(수제 OOXML writer) (순수 JVM)
-  - `secondbrain/` — Second Brain 연동
   - `settings/` — 앱 설정 (DataStore Preferences)
 - DI: 수동 DI (`AppContainer`). **Hilt 금지.**
 
