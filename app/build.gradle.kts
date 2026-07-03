@@ -20,6 +20,8 @@ android {
 
     buildTypes {
         release {
+            // 개인용 spike 측정을 위한 debug 서명 — 스토어 배포 시 교체
+            signingConfig = signingConfigs.getByName("debug")
             isMinifyEnabled = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),

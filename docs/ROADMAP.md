@@ -5,7 +5,7 @@
 | ID | 내용 | 담당 | 상태 |
 |----|------|------|------|
 | S0 | fixture 준비 (fixtures/docx, fixtures/md) | Codex | ✅ 완료 (stdlib 생성기, python-docx 불필요) |
-| S1 | Mammoth import spike (R8 통과 + fixture crash 0건) | Claude Code | 대기 |
+| S1 | Mammoth import spike (R8 통과 + fixture crash 0건) | Claude Code | ✅ 성공 (spike/S1-REPORT.md, 실기기 측정만 잔여) |
 | S2 | flexmark round-trip + jsoup cleaner | Codex | ✅ 완료 (테스트 통과) |
 | S3 | 수제 OOXML writer (의존성 0개) | Claude Code | 대기 |
 | S4 | SAF repository (DocumentsContract 직접) | Codex | 코드 완료 — 실기기 500ms 측정 대기 |

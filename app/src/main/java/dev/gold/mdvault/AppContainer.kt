@@ -1,7 +1,14 @@
 package dev.gold.mdvault
 
+import dev.gold.mdvault.docx.DocxImportEngine
+import dev.gold.mdvault.docx.MammothDocxImportEngine
+import dev.gold.mdvault.markdown.FlexmarkMarkdownEngine
+import dev.gold.mdvault.markdown.MarkdownEngine
+
 /**
  * 수동 DI 컨테이너. Hilt 금지 (CLAUDE.md 아키텍처 규칙).
- * 구현체는 spike(S1~S5) 결과로 인터페이스가 확정된 뒤 여기에 등록한다.
  */
-class AppContainer
+class AppContainer {
+    val markdownEngine: MarkdownEngine = FlexmarkMarkdownEngine()
+    val docxImportEngine: DocxImportEngine = MammothDocxImportEngine()
+}
