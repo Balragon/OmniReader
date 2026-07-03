@@ -4,11 +4,11 @@
 
 | ID | 내용 | 담당 | 상태 |
 |----|------|------|------|
-| S0 | fixture 준비 (fixtures/docx, fixtures/md) | Codex | 대기 |
+| S0 | fixture 준비 (fixtures/docx, fixtures/md) | Codex | ✅ 완료 (stdlib 생성기, python-docx 불필요) |
 | S1 | Mammoth import spike (R8 통과 + fixture crash 0건) | Claude Code | 대기 |
-| S2 | flexmark round-trip + jsoup cleaner | Codex | 대기 |
+| S2 | flexmark round-trip + jsoup cleaner | Codex | ✅ 완료 (테스트 통과) |
 | S3 | 수제 OOXML writer (의존성 0개) | Claude Code | 대기 |
-| S4 | SAF repository (DocumentsContract 직접) | Codex | 대기 |
+| S4 | SAF repository (DocumentsContract 직접) | Codex | 코드 완료 — 실기기 500ms 측정 대기 |
 | S5 | Compose editor 한글 안정성 판정 (실기기) | Claude Code | 대기 |
 
 **게이트: S1, S3 리포트(spike/S*-REPORT.md)가 나오기 전에 Phase 2(UI) 착수 금지.**
