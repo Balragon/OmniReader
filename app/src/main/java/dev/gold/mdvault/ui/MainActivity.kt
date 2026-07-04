@@ -128,6 +128,7 @@ private fun MdvaultApp(container: AppContainer) {
                     MarkdownReaderScreen(
                         vaultRepository = container.vaultRepository,
                         markdownEngine = container.markdownEngine,
+                        docxExporter = container.vaultDocxExporter,
                         relativePath = path,
                         onEdit = { screen = Screen.Editor },
                         onBack = { screen = Screen.Home },

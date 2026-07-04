@@ -83,14 +83,22 @@ class VaultRepository(
         return document
     }
 
-    suspend fun <T> read(relativePath: String, reader: (InputStream) -> T): T {
+    /**
+     * trackRecent=false는 부수 읽기(reader의 이미지 인터셉트, export의 asset
+     * 해석)용 — 최근 문서 목록을 오염시키지 않는다.
+     */
+    suspend fun <T> read(
+        relativePath: String,
+        trackRecent: Boolean = true,
+        reader: (InputStream) -> T,
+    ): T {
         val treeUri = requireVaultTreeUri()
         val path = VaultRelativePath.parse(relativePath)
         val document = safRepository.resolve(treeUri, path.value)
             ?: throw IllegalArgumentException("Vault document not found: ${path.value}")
         require(!document.isDirectory) { "Vault path is a directory: ${path.value}" }
         return safRepository.read(treeUri, document.uri, document.mimeType, reader).also {
-            recordRecentDocument(path.value)
+            if (trackRecent) recordRecentDocument(path.value)
         }
     }
 

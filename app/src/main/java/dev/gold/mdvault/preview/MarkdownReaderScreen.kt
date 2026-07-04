@@ -27,9 +27,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.runtime.rememberCoroutineScope
+import dev.gold.mdvault.document.VaultDocxExporter
 import dev.gold.mdvault.markdown.MarkdownEngine
 import dev.gold.mdvault.storage.VaultRepository
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayInputStream
@@ -46,6 +49,7 @@ import java.io.ByteArrayInputStream
 fun MarkdownReaderScreen(
     vaultRepository: VaultRepository,
     markdownEngine: MarkdownEngine,
+    docxExporter: VaultDocxExporter,
     relativePath: String,
     onEdit: () -> Unit,
     onBack: () -> Unit,
@@ -53,6 +57,8 @@ fun MarkdownReaderScreen(
 ) {
     var html by remember(relativePath) { mutableStateOf<String?>(null) }
     var error by remember(relativePath) { mutableStateOf<String?>(null) }
+    var notice by remember(relativePath) { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(relativePath) {
         withContext(Dispatchers.IO) {
@@ -79,7 +85,25 @@ fun MarkdownReaderScreen(
                 modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
                 maxLines = 1,
             )
+            TextButton(onClick = {
+                notice = "DOCX 내보내는 중…"
+                scope.launch(Dispatchers.IO) {
+                    notice = try {
+                        val result = docxExporter.export(relativePath)
+                        "내보내기 완료: ${result.relativePath} (경고 ${result.warningCount}건)"
+                    } catch (e: Exception) {
+                        "내보내기 실패: ${e.message ?: e.javaClass.simpleName}"
+                    }
+                }
+            }) { Text("DOCX") }
             TextButton(onClick = onEdit) { Text("편집") }
+        }
+        notice?.let {
+            Text(
+                text = it,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+            )
         }
         when {
             error != null -> Text(
@@ -146,8 +170,10 @@ private class VaultWebViewClient(
         val vaultPath = url.path.orEmpty().trimStart('/')
         if (vaultPath.isEmpty()) return null
         return try {
-            // WebView IO 스레드에서 호출됨 — blocking 안전
-            val bytes = runBlocking { vaultRepository.read(vaultPath) { it.readBytes() } }
+            // WebView IO 스레드에서 호출됨 — blocking 안전. 최근 문서 오염 방지.
+            val bytes = runBlocking {
+                vaultRepository.read(vaultPath, trackRecent = false) { it.readBytes() }
+            }
             WebResourceResponse(mimeTypeFor(vaultPath), null, ByteArrayInputStream(bytes))
         } catch (e: Exception) {
             null

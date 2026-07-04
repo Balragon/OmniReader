@@ -27,5 +27,6 @@ S1 실패(R8 불통과 또는 광범위 crash) 시 Mammoth.js WebView sandbox �
 
 ## Phase 3 — P1 (dogfooding friction 순서대로)
 
-읽기 경험 개선(글꼴/여백/다크모드), DOCX export(S3 승격), search,
+- ✅ DOCX export S3 승격 (reader "DOCX" 버튼, 2026-07-04 에뮬레이터+LibreOffice 검증)
+읽기 경험 개선(글꼴/여백/다크모드), search,
 share target, table helper, diff view — 우선순위는 dogfooding friction 순

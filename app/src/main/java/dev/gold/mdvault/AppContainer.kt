@@ -1,6 +1,7 @@
 package dev.gold.mdvault
 
 import dev.gold.mdvault.document.DocxToMarkdownImporter
+import dev.gold.mdvault.document.VaultDocxExporter
 import dev.gold.mdvault.docx.DocxExportEngine
 import dev.gold.mdvault.docx.DocxImportEngine
 import dev.gold.mdvault.docx.MammothDocxImportEngine
@@ -21,6 +22,10 @@ class AppContainer(context: android.content.Context) {
     val markdownEngine: MarkdownEngine = FlexmarkMarkdownEngine(htmlCleaner)
     val docxImportEngine: DocxImportEngine = MammothDocxImportEngine()
     val docxExportEngine: DocxExportEngine = SimpleOoxmlDocxExportEngine()
+    val vaultDocxExporter: VaultDocxExporter = VaultDocxExporter(
+        vaultRepository = vaultRepository,
+        exportEngine = docxExportEngine,
+    )
     val docxToMarkdownImporter: DocxToMarkdownImporter = DocxToMarkdownImporter(
         docxImportEngine = docxImportEngine,
         htmlCleaner = htmlCleaner,
