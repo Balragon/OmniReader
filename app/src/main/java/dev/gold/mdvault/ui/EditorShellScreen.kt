@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -33,12 +34,15 @@ fun EditorShellScreen(
     vaultRepository: VaultRepository,
     relativePath: String,
     onBack: () -> Unit,
+    onDeleted: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val scope = rememberCoroutineScope()
     var editorPort by remember(relativePath) { mutableStateOf<ComposeEditorPort?>(null) }
     var status by remember(relativePath) { mutableStateOf<String?>(null) }
     var isSaving by remember(relativePath) { mutableStateOf(false) }
+    var isDeleting by remember(relativePath) { mutableStateOf(false) }
+    var showDeleteDialog by remember(relativePath) { mutableStateOf(false) }
 
     fun save(afterSave: (() -> Unit)? = null) {
         val port = editorPort ?: run {
@@ -64,6 +68,25 @@ fun EditorShellScreen(
         }
     }
 
+    fun deleteNote() {
+        scope.launch {
+            isDeleting = true
+            status = "삭제 중..."
+            try {
+                withContext(Dispatchers.IO) {
+                    vaultRepository.delete(relativePath)
+                }
+                status = null
+                showDeleteDialog = false
+                onDeleted()
+            } catch (e: Exception) {
+                status = "삭제 실패: ${e.message ?: e.javaClass.simpleName}"
+            } finally {
+                isDeleting = false
+            }
+        }
+    }
+
     LaunchedEffect(relativePath) {
         editorPort = null
         status = "불러오는 중..."
@@ -80,8 +103,34 @@ fun EditorShellScreen(
         }
     }
 
-    BackHandler(enabled = !isSaving) {
+    BackHandler(enabled = !isSaving && !isDeleting) {
         save(onBack)
+    }
+
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { if (!isDeleting) showDeleteDialog = false },
+            title = { Text("노트 삭제") },
+            text = {
+                Text("${relativePath.substringAfterLast('/')} 파일을 삭제할까요? 이 작업은 되돌릴 수 없습니다.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = ::deleteNote,
+                    enabled = !isDeleting,
+                ) {
+                    Text("삭제")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showDeleteDialog = false },
+                    enabled = !isDeleting,
+                ) {
+                    Text("취소")
+                }
+            },
+        )
     }
 
     Scaffold(
@@ -98,15 +147,21 @@ fun EditorShellScreen(
                 navigationIcon = {
                     TextButton(
                         onClick = { save(onBack) },
-                        enabled = !isSaving,
+                        enabled = !isSaving && !isDeleting,
                     ) {
                         Text("뒤로")
                     }
                 },
                 actions = {
                     TextButton(
+                        onClick = { showDeleteDialog = true },
+                        enabled = editorPort != null && !isSaving && !isDeleting,
+                    ) {
+                        Text("삭제")
+                    }
+                    TextButton(
                         onClick = { save() },
-                        enabled = editorPort != null && !isSaving,
+                        enabled = editorPort != null && !isSaving && !isDeleting,
                     ) {
                         Text("저장")
                     }

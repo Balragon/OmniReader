@@ -113,12 +113,30 @@ class VaultRepository(
         }
     }
 
+    suspend fun delete(relativePath: String) {
+        val treeUri = requireVaultTreeUri()
+        val path = VaultRelativePath.parse(relativePath)
+        val document = safRepository.resolve(treeUri, path.value)
+            ?: throw IllegalArgumentException("Vault document not found: ${path.value}")
+        require(!document.isDirectory) { "Vault path is a directory: ${path.value}" }
+        safRepository.delete(document.uri)
+        removeRecentDocument(path.value)
+    }
+
     suspend fun recordRecentDocument(relativePath: String) {
         val path = VaultRelativePath.parse(relativePath).value
         context.vaultDataStore.edit { preferences ->
             val updated = listOf(path)
                 .plus(decodeRecent(preferences[RECENT_DOCUMENTS].orEmpty()).filterNot { it == path })
                 .take(MAX_RECENT_DOCUMENTS)
+            preferences[RECENT_DOCUMENTS] = encodeRecent(updated)
+        }
+    }
+
+    private suspend fun removeRecentDocument(relativePath: String) {
+        context.vaultDataStore.edit { preferences ->
+            val updated = decodeRecent(preferences[RECENT_DOCUMENTS].orEmpty())
+                .filterNot { it == relativePath }
             preferences[RECENT_DOCUMENTS] = encodeRecent(updated)
         }
     }

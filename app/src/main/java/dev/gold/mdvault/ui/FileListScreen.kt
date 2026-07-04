@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -68,6 +69,8 @@ fun FileListScreen(
     var entries by remember(currentDirectory, refreshKey) { mutableStateOf<List<SafDocument>?>(null) }
     var error by remember(currentDirectory, refreshKey) { mutableStateOf<String?>(null) }
     var status by remember { mutableStateOf<String?>(null) }
+    var pendingDelete by remember { mutableStateOf<DeleteTarget?>(null) }
+    var isDeleting by remember { mutableStateOf(false) }
 
     fun refresh() {
         refreshKey += 1
@@ -94,6 +97,25 @@ fun FileListScreen(
                 onEditFile(path)
             } catch (e: Exception) {
                 status = "새 노트 생성 실패: ${e.userMessage()}"
+            }
+        }
+    }
+
+    fun deleteNote(target: DeleteTarget) {
+        scope.launch {
+            isDeleting = true
+            status = "삭제 중..."
+            try {
+                withContext(Dispatchers.IO) {
+                    vaultRepository.delete(target.path)
+                }
+                pendingDelete = null
+                status = "삭제했습니다: ${target.displayName}"
+                refresh()
+            } catch (e: Exception) {
+                status = "삭제 실패: ${e.userMessage()}"
+            } finally {
+                isDeleting = false
             }
         }
     }
@@ -139,6 +161,30 @@ fun FileListScreen(
 
     BackHandler(enabled = canNavigateUp) {
         onNavigateUp()
+    }
+
+    pendingDelete?.let { target ->
+        AlertDialog(
+            onDismissRequest = { if (!isDeleting) pendingDelete = null },
+            title = { Text("노트 삭제") },
+            text = { Text("${target.displayName} 파일을 삭제할까요? 이 작업은 되돌릴 수 없습니다.") },
+            confirmButton = {
+                TextButton(
+                    onClick = { deleteNote(target) },
+                    enabled = !isDeleting,
+                ) {
+                    Text("삭제")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { pendingDelete = null },
+                    enabled = !isDeleting,
+                ) {
+                    Text("취소")
+                }
+            },
+        )
     }
 
     Scaffold(
@@ -217,10 +263,10 @@ fun FileListScreen(
                     )
                 }
                 else -> items(entries!!, key = { it.documentId }) { document ->
+                    val path = joinVaultPath(currentDirectory, document.displayName)
                     VaultEntryRow(
                         document = document,
                         onClick = {
-                            val path = joinVaultPath(currentDirectory, document.displayName)
                             if (document.isDirectory) {
                                 onOpenDirectory(path)
                             } else if (document.kind() == DocumentKind.MARKDOWN) {
@@ -228,6 +274,16 @@ fun FileListScreen(
                             } else {
                                 onOpenDocument(document.uri)
                             }
+                        },
+                        onDelete = if (!document.isDirectory && document.kind() == DocumentKind.MARKDOWN) {
+                            {
+                                pendingDelete = DeleteTarget(
+                                    path = path,
+                                    displayName = document.displayName,
+                                )
+                            }
+                        } else {
+                            null
                         },
                     )
                 }
@@ -240,6 +296,7 @@ fun FileListScreen(
 private fun VaultEntryRow(
     document: SafDocument,
     onClick: () -> Unit,
+    onDelete: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -266,6 +323,11 @@ private fun VaultEntryRow(
                     text = "${document.size} bytes",
                     style = MaterialTheme.typography.bodySmall,
                 )
+            }
+        }
+        if (onDelete != null) {
+            TextButton(onClick = onDelete) {
+                Text("삭제")
             }
         }
     }
@@ -295,6 +357,11 @@ private fun SafDocument.label(): String =
 private data class ImportResult(
     val markdownPath: String,
     val warningCount: Int,
+)
+
+private data class DeleteTarget(
+    val path: String,
+    val displayName: String,
 )
 
 private data class MediaDirectory(

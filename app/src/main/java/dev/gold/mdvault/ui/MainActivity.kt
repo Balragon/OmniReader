@@ -221,6 +221,10 @@ private fun MdvaultApp(container: AppContainer) {
                     vaultRepository = container.vaultRepository,
                     relativePath = path,
                     onBack = { screen = Screen.Reader },
+                    onDeleted = {
+                        editorPath = null
+                        screen = Screen.FileList
+                    },
                 )
             }
         }

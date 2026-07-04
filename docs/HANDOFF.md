@@ -18,7 +18,8 @@
   (md/txt 렌더, docx 즉석 변환+MD 저장, html JS차단 표시, pdf 내장 렌더러,
   이미지 화면맞춤+핀치줌). 홈 = 파일 열기 + 최근 파일 + 내 폴더.
 - 볼트(내 폴더): 파일 목록(전 형식) → md는 Reader→편집기, DOCX 가져오기,
-  DOCX 내보내기(reader의 "DOCX" 버튼), 새 노트 → 편집기 직행.
+  DOCX 내보내기(reader의 "DOCX" 버튼), 새 노트 → 편집기 직행,
+  `.md` 노트는 목록/편집기에서 확인창 후 삭제.
 - 폴더 변경 화면(VaultSetup): 시스템 뒤로가기 → 기존 볼트가 있으면 파일
   목록으로 복귀, 아직 볼트가 없으면 홈으로 복귀.
 - 에디터: Compose TextFieldState + **자체 debounce(350ms) 스냅샷 undo**

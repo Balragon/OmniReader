@@ -119,6 +119,15 @@ class SafDocumentRepository(
             queryDocument(treeUri, uri) ?: throw FileNotFoundException("Created document not found: $uri")
         }
 
+    suspend fun delete(documentUri: Uri) {
+        withContext(ioDispatcher) {
+            val deleted = DocumentsContract.deleteDocument(contentResolver, documentUri)
+            if (!deleted) {
+                throw FileNotFoundException("Unable to delete document: $documentUri")
+            }
+        }
+    }
+
     fun rootDocumentUri(treeUri: Uri): Uri =
         DocumentsContract.buildDocumentUriUsingTree(treeUri, DocumentsContract.getTreeDocumentId(treeUri))
 
