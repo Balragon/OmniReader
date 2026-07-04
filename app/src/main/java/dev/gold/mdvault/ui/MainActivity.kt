@@ -43,13 +43,15 @@ class MainActivity : ComponentActivity() {
     private val container: AppContainer by lazy(LazyThreadSafetyMode.NONE) {
         AppContainer(applicationContext)
     }
+    private var externalUriState by mutableStateOf<Uri?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val externalUri = externalDocumentUri(intent)
+        externalUriState = externalDocumentUri(intent)
         setContent {
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
+                    val externalUri = externalUriState
                     if (externalUri != null) {
                         // "내 파일" 등에서 연결 앱으로 열린 경우 — 뷰어만 표시,
                         // 뒤로 가면 원래 앱으로 복귀 (볼트 설정 불필요)
@@ -66,6 +68,12 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        externalUriState = externalDocumentUri(intent)
     }
 
     private fun externalDocumentUri(intent: Intent?): Uri? = when (intent?.action) {

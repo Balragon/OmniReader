@@ -1,11 +1,17 @@
 package dev.gold.mdvault.preview
 
 import android.content.ContentResolver
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.webkit.WebView
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -24,6 +30,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -46,7 +57,7 @@ import java.security.MessageDigest
  * - md/txt: 즉시 렌더링 (원본은 읽기만)
  * - docx: 캐시에 즉석 변환 후 렌더링, "MD 저장"으로 원할 때만 저장
  * - html: JS 비활성 WebView (오프라인 — 원격 리소스 로드 안 함)
- * - 이미지: WebView 표시 (핀치 줌)
+ * - 이미지: 네이티브 화면맞춤 표시 (핀치 줌)
  * - pdf: PdfRenderer 페이지 뷰
  */
 @Composable
@@ -77,6 +88,16 @@ fun SingleDocumentViewerScreen(
                 ViewerState.Error(e.message ?: e.javaClass.simpleName)
             }
         }
+    }
+
+    val currentState = state
+    if (currentState is ViewerState.Image) {
+        FullscreenImageViewer(
+            uri = currentState.uri,
+            displayName = displayName,
+            onBack = onBack,
+        )
+        return
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -121,43 +142,153 @@ fun SingleDocumentViewerScreen(
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
             )
         }
-        when (val current = state) {
+        when (currentState) {
             ViewerState.Loading -> Text("여는 중…", modifier = Modifier.padding(24.dp))
             is ViewerState.Error -> Text(
-                text = "문서를 열 수 없습니다: ${current.message}",
+                text = "문서를 열 수 없습니다: ${currentState.message}",
                 modifier = Modifier.padding(24.dp),
             )
+            is ViewerState.Image -> Unit
             is ViewerState.Pdf -> PdfPagesView(uri, modifier = Modifier.fillMaxSize())
-            is ViewerState.Web -> key(current.html) {
-                AndroidView(
-                    modifier = Modifier.fillMaxSize(),
-                    factory = { ctx ->
-                        WebView(ctx).apply {
-                            settings.javaScriptEnabled = false
-                            settings.blockNetworkLoads = true
-                            settings.allowFileAccess = false
-                            settings.allowContentAccess = false
-                            if (current.enableZoom) {
-                                settings.setSupportZoom(true)
-                                settings.builtInZoomControls = true
-                                settings.displayZoomControls = false
-                            }
-                            webViewClient = DocumentWebViewClient(
-                                context = context,
-                                loadAsset = current.loadAsset,
-                            )
-                            loadDataWithBaseURL(vaultBaseUrl(""), current.html, "text/html", "utf-8", null)
-                        }
-                    },
-                )
-            }
+            is ViewerState.Web -> DocumentWebViewer(
+                state = currentState,
+                modifier = Modifier.fillMaxSize(),
+            )
         }
+    }
+}
+
+@Composable
+private fun FullscreenImageViewer(
+    uri: Uri,
+    displayName: String,
+    onBack: () -> Unit,
+) {
+    val context = LocalContext.current
+    var image by remember(uri) { mutableStateOf<ImageBitmap?>(null) }
+    var error by remember(uri) { mutableStateOf<String?>(null) }
+    var scale by remember(uri) { mutableStateOf(1f) }
+    var offsetX by remember(uri) { mutableStateOf(0f) }
+    var offsetY by remember(uri) { mutableStateOf(0f) }
+    val transformableState = rememberTransformableState { zoomChange, panChange, _ ->
+        val nextScale = (scale * zoomChange).coerceIn(1f, 6f)
+        if (nextScale == 1f) {
+            offsetX = 0f
+            offsetY = 0f
+        } else {
+            offsetX += panChange.x
+            offsetY += panChange.y
+        }
+        scale = nextScale
+    }
+
+    LaunchedEffect(uri) {
+        image = null
+        error = null
+        try {
+            image = withContext(Dispatchers.IO) {
+                val bitmap = context.contentResolver.openInputStream(uri)?.use { input ->
+                    BitmapFactory.decodeStream(input)
+                } ?: throw FileNotFoundException("$uri")
+                bitmap.asImageBitmap()
+            }
+        } catch (e: Exception) {
+            error = e.message ?: e.javaClass.simpleName
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black),
+    ) {
+        when {
+            error != null -> Text(
+                text = "이미지를 열 수 없습니다: $error",
+                color = Color.White,
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .padding(24.dp),
+            )
+            image == null -> Text(
+                text = "여는 중…",
+                color = Color.White,
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .padding(24.dp),
+            )
+            else -> Image(
+                bitmap = image!!,
+                contentDescription = displayName,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer(
+                        scaleX = scale,
+                        scaleY = scale,
+                        translationX = offsetX,
+                        translationY = offsetY,
+                    )
+                    .transformable(transformableState),
+            )
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .align(Alignment.TopStart)
+                .background(Color(0x99000000))
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TextButton(onClick = onBack) { Text("←") }
+            Text(
+                text = displayName,
+                color = Color.White,
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+@Composable
+private fun DocumentWebViewer(
+    state: ViewerState.Web,
+    modifier: Modifier = Modifier,
+) {
+    val context = LocalContext.current
+    key(state.html) {
+        AndroidView(
+            modifier = modifier,
+            factory = { ctx ->
+                WebView(ctx).apply {
+                    settings.javaScriptEnabled = false
+                    settings.blockNetworkLoads = true
+                    settings.allowFileAccess = false
+                    settings.allowContentAccess = false
+                    if (state.enableZoom) {
+                        settings.useWideViewPort = true
+                        settings.loadWithOverviewMode = true
+                        settings.setSupportZoom(true)
+                        settings.builtInZoomControls = true
+                        settings.displayZoomControls = false
+                    }
+                    webViewClient = DocumentWebViewClient(
+                        context = context,
+                        loadAsset = state.loadAsset,
+                    )
+                    loadDataWithBaseURL(vaultBaseUrl(""), state.html, "text/html", "utf-8", null)
+                }
+            },
+        )
     }
 }
 
 private sealed interface ViewerState {
     data object Loading : ViewerState
     data class Error(val message: String) : ViewerState
+    data class Image(val uri: Uri) : ViewerState
     data object Pdf : ViewerState
     data class Web(
         val html: String,
@@ -195,29 +326,7 @@ private fun loadDocument(
     }
 
     DocumentKind.IMAGE -> {
-        val extension = displayName.substringAfterLast('.', "png").lowercase()
-        val assetName = "image.$extension"
-        ViewerState.Web(
-            // 갤러리처럼 화면 안에 전체가 들어오게(contain) — 핀치 줌으로 확대.
-            // vh/flex는 WebView wide-viewport에서 높이가 0으로 계산될 수 있어
-            // position:fixed + object-fit:contain 사용.
-            html = "<html><head>" +
-                "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">" +
-                "</head><body style=\"margin:0;background:#111\">" +
-                "<img src=\"$assetName\" " +
-                "style=\"position:fixed;top:0;left:0;width:100%;height:100%;object-fit:contain\">" +
-                "</body></html>",
-            loadAsset = { key ->
-                if (key == assetName) {
-                    runCatching {
-                        resolver.openInputStream(uri)?.use { it.readBytes() }
-                    }.getOrNull()
-                } else {
-                    null
-                }
-            },
-            enableZoom = true,
-        )
+        ViewerState.Image(uri)
     }
 
     DocumentKind.DOCX -> {
