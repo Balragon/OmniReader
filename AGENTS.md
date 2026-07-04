@@ -1,73 +1,47 @@
-# mdvault — 개인용 Android Markdown Vault
+# Codex 작업 지침 (mdvault)
 
-## 프로젝트 정의
+이 저장소는 Claude Code와 Codex가 함께 작업한다. **Claude 플랜 사용량 한도가
+95%를 넘으면 사용자가 Codex로 전환한다** — 그 경우 이 문서가 진입점이다.
+(이 문서의 이전 버전은 CLAUDE.md의 복사본이었으나, 규칙의 원본은 CLAUDE.md
+하나로 유지한다 — 여기에 규칙을 복제하지 말 것.)
 
-개인용 Android Markdown vault 앱. **핵심 목표는 문서를 읽는 앱**이다 —
-LLM/DOCX 산출물을 Markdown으로 흡수해 잘 읽히게 보여주고, 필요할 때만
-편집하거나 제한된 DOCX를 새로 생성한다. Second Brain 등 외부 서비스 연동은
-하지 않는다 (2026-07-03 확정). **Markdown(.md)이 canonical 포맷**이며
-DOCX는 import/export gateway다. **원본 DOCX는 절대 자동 덮어쓰지 않는다.**
+## 시작 절차 (반드시 순서대로)
 
-## 1. 스택
+1. **CLAUDE.md를 읽고 그 규칙 전부를 그대로 따른다**
+   (아키텍처, 의존성 허용목록, 변환 파이프라인 순수성, 우선순위 규칙,
+   테스트 정책 모두 동일하게 적용).
+2. **docs/HANDOFF.md를 읽는다** — 현재 상태, 남은 작업, 지뢰 목록.
+3. `git log --oneline -15`로 최근 작업 흐름을 파악한 뒤 시작한다.
 
-- Kotlin, Jetpack Compose (Material 3)
-- minSdk 29, targetSdk 34, compileSdk 34
-- JDK 17 (Android Gradle Plugin 8.x 요구)
-- 빌드: Gradle version catalog (`gradle/libs.versions.toml`) — 버전은 반드시 catalog에서만 정의
+## Codex 환경 참고
 
-## 2. 아키텍처
+- 로컬 대화형 세션에서는 Gradle 실행 가능:
+  ```bash
+  export JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home
+  ./gradlew test assembleRelease
+  ```
+  (omegacode 샌드박스에서만 데몬 소켓이 막혔던 것 — 로컬 터미널은 정상.)
+- 에뮬레이터: `~/Library/Android/sdk/emulator/emulator -avd mdvault-api34`
+  (headless: `-no-window -no-audio -no-boot-anim`).
+  adb: `~/Library/Android/sdk/platform-tools/adb`.
+- 실기기 Galaxy S21 Ultra 시리얼 `REDACTED` (연결 시).
+  기기 복수 연결 시 `ANDROID_SERIAL`로 지정.
+- mammoth는 Maven 원본이 아니라 **패치된 로컬 jar**
+  (`app/libs/mammoth-1.9.0-android.jar`)를 쓴다 — 절대 catalog 의존성으로
+  되돌리지 말 것. 사유·재생성 절차: `tools/mammoth-android-patch/README.md`.
 
-- 단일 모듈 (`:app`), 패키지 경계 엄수:
-  - `ui/` — 공통 UI, 네비게이션, 테마
-  - `editor/` — Markdown 편집기 (EditorPort 인터페이스 뒤에 구현 격리)
-  - `preview/` — Markdown 렌더링/읽기 화면 (핵심 동선)
-  - `document/` — 문서 도메인 모델, import/export 파이프라인 조립
-  - `storage/` — SAF 기반 vault 접근 (DocumentsContract 직접 사용)
-  - `markdown/` — flexmark 기반 변환 엔진 (순수 JVM)
-  - `docx/` — DOCX import(Mammoth)/export(수제 OOXML writer) (순수 JVM)
-  - `settings/` — 앱 설정 (DataStore Preferences)
-- DI: 수동 DI (`AppContainer`). **Hilt 금지.**
+## 필수 검증 규칙
 
-## 3. 변환 파이프라인 격리 (빌드 강제)
+- **release 관련 변경 후에는 반드시 에뮬레이터에서 release APK 스모크 테스트.**
+  JVM 테스트로는 잡히지 않는 Android 전용 크래시가 이미 2건 있었다
+  (R8×flexmark 병합, Android SAX). 목록: docs/HANDOFF.md "지뢰" 절.
+- `connectedAndroidTest`는 종료 시 앱을 제거한다 — 이후 수동 테스트하려면
+  release 재설치 + 볼트 재선택 필요.
+- 검증 통과 전 커밋 금지.
 
-`markdown/`, `docx/` 패키지는 Android API import **금지**:
-`android.*`, `androidx.*` (Context, Uri, ContentResolver, BitmapFactory 포함 전부).
-입출력은 `InputStream`/`OutputStream`/plain data class만 사용한다.
+## 작업 종료 시 의무
 
-이 규칙은 `app/src/test/.../ConversionPurityTest.kt`가 소스를 스캔하여 강제한다
-(위반 시 테스트 실패 = 빌드 실패). 이 테스트를 약화하거나 삭제하지 않는다.
-
-## 4. 의존성 정책
-
-허용 목록 (이외 추가는 **사전 승인 필요**):
-- `com.vladsch.flexmark:flexmark` (core), `flexmark-html2md-converter`,
-  `flexmark-ext-tables`, `flexmark-ext-gfm-tasklist`, `flexmark-ext-yaml-front-matter`
-- `org.zwobble.mammoth:mammoth` (java-mammoth)
-- `org.jsoup:jsoup`
-- AndroidX 기본 (core-ktx, activity-compose, lifecycle, Compose BOM, DataStore Preferences)
-
-**금지**: docx4j, Apache POI, flexmark-docx-converter, Hilt, DocumentFile, Robolectric.
-
-## 5. 우선순위 충돌 규칙
-
-데이터 안전성 > 오프라인 동작 > 앱 안정성 > Markdown 편집 편의 > DOCX fidelity > 미관
-
-## 6. 테스트
-
-- 변환 로직(markdown/, docx/): 순수 JUnit + `/fixtures` 스냅샷 테스트
-- **Robolectric 금지** (불필요) — Android 의존 코드만 instrumentation test
-- fixture는 `/fixtures/docx`, `/fixtures/md`에 있으며 기대 결과는 각 EXPECTED.md 참조
-
-## 7. Codex 위임 규칙
-
-- 인터페이스 시그니처가 **확정된** 작업만 Codex에 위임한다
-- spike S1(Mammoth import), S3(OOXML writer) 결과 반영 전 **UI 구현 착수 금지**
-- spike 리포트는 `/spike/S*-REPORT.md`에 기록한다
-
-## 빌드/검증 명령
-
-```bash
-./gradlew assembleDebug        # 디버그 빌드
-./gradlew test                 # 순수 JUnit (변환 로직 + 순수성 검사)
-./gradlew connectedAndroidTest # 실기기 instrumentation
-```
+1. `./gradlew test assembleRelease` 통과 확인 후 커밋.
+2. **docs/HANDOFF.md의 "현재 상태" / "다음 작업" 절을 갱신** —
+   Claude가 복귀하면 이 문서로 상황을 파악한다.
+3. `git push origin main`.
