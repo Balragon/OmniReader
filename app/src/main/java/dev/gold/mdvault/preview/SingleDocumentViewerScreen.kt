@@ -5,14 +5,21 @@ import android.content.Context
 import android.content.ContentResolver
 import android.content.ContextWrapper
 import android.graphics.BitmapFactory
+import android.graphics.Color as AndroidColor
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.webkit.WebView
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Box
@@ -21,10 +28,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -38,10 +47,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import dev.gold.mdvault.document.DocumentKind
 import dev.gold.mdvault.document.DocumentTypeDetector
 import dev.gold.mdvault.document.DocxToMarkdownImporter
@@ -172,38 +186,99 @@ private fun MediaViewerScaffold(
     onBack: () -> Unit,
     content: @Composable () -> Unit,
 ) {
+    val context = LocalContext.current
+    val view = LocalView.current
+    val window = remember(context, view) { context.findActivity()?.window }
+    var chromeVisible by remember { mutableStateOf(true) }
     BackHandler(onBack = onBack)
 
-    Column(
+    DisposableEffect(window, view) {
+        var previousStatusBarColor: Int? = null
+        var previousNavigationBarColor: Int? = null
+        var previousLightStatusBars: Boolean? = null
+        var previousLightNavigationBars: Boolean? = null
+        if (window != null) {
+            previousStatusBarColor = window.statusBarColor
+            previousNavigationBarColor = window.navigationBarColor
+            WindowCompat.setDecorFitsSystemWindows(window, false)
+            WindowCompat.getInsetsController(window, view).apply {
+                previousLightStatusBars = isAppearanceLightStatusBars
+                previousLightNavigationBars = isAppearanceLightNavigationBars
+                isAppearanceLightStatusBars = false
+                isAppearanceLightNavigationBars = false
+                systemBarsBehavior =
+                    WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                show(WindowInsetsCompat.Type.systemBars())
+            }
+            window.statusBarColor = AndroidColor.TRANSPARENT
+            window.navigationBarColor = AndroidColor.TRANSPARENT
+        }
+        onDispose {
+            if (window != null) {
+                WindowCompat.getInsetsController(window, view).apply {
+                    show(WindowInsetsCompat.Type.systemBars())
+                    previousLightStatusBars?.let { isAppearanceLightStatusBars = it }
+                    previousLightNavigationBars?.let { isAppearanceLightNavigationBars = it }
+                }
+                previousStatusBarColor?.let { window.statusBarColor = it }
+                previousNavigationBarColor?.let { window.navigationBarColor = it }
+                WindowCompat.setDecorFitsSystemWindows(window, true)
+            }
+        }
+    }
+
+    LaunchedEffect(chromeVisible, window, view) {
+        if (window != null) {
+            val controller = WindowCompat.getInsetsController(window, view)
+            if (chromeVisible) {
+                controller.show(WindowInsetsCompat.Type.systemBars())
+            } else {
+                controller.hide(WindowInsetsCompat.Type.systemBars())
+            }
+        }
+    }
+
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black),
+            .background(Color.Black)
+            .pointerInput(Unit) {
+                detectTapGestures(onTap = { chromeVisible = !chromeVisible })
+            },
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Color.Black)
-                .padding(horizontal = 8.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            TextButton(onClick = onBack) {
-                Text("←", color = Color.White)
-            }
-            Text(
-                text = displayName,
-                color = Color.White,
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
-                maxLines = 1,
-            )
-        }
         Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f)
+                .fillMaxSize()
                 .background(Color.Black),
         ) {
             content()
+        }
+
+        AnimatedVisibility(
+            visible = chromeVisible,
+            enter = fadeIn() + slideInVertically(initialOffsetY = { -it / 2 }),
+            exit = fadeOut() + slideOutVertically(targetOffsetY = { -it / 2 }),
+            modifier = Modifier.align(Alignment.TopCenter),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color.Black.copy(alpha = 0.86f))
+                    .statusBarsPadding()
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TextButton(onClick = onBack) {
+                    Text("←", color = Color.White)
+                }
+                Text(
+                    text = displayName,
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                    maxLines = 1,
+                )
+            }
         }
     }
 }
