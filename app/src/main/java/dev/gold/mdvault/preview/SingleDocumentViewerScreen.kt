@@ -1,6 +1,9 @@
 package dev.gold.mdvault.preview
 
+import android.app.Activity
+import android.content.Context
 import android.content.ContentResolver
+import android.content.ContextWrapper
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.provider.OpenableColumns
@@ -9,6 +12,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Box
@@ -21,6 +25,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -34,16 +39,22 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import dev.gold.mdvault.document.DocumentKind
 import dev.gold.mdvault.document.DocumentTypeDetector
 import dev.gold.mdvault.document.DocxToMarkdownImporter
 import dev.gold.mdvault.markdown.MarkdownEngine
 import dev.gold.mdvault.storage.RecentFilesRepository
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -57,7 +68,7 @@ import java.security.MessageDigest
  * - md/txt: 즉시 렌더링 (원본은 읽기만)
  * - docx: 캐시에 즉석 변환 후 렌더링, "MD 저장"으로 원할 때만 저장
  * - html: JS 비활성 WebView (오프라인 — 원격 리소스 로드 안 함)
- * - 이미지: 네이티브 화면맞춤 표시 (핀치 줌)
+ * - 이미지: 네이티브 몰입형 화면맞춤 표시 (핀치 줌)
  * - pdf: PdfRenderer 페이지 뷰
  */
 @Composable
@@ -165,11 +176,14 @@ private fun FullscreenImageViewer(
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
+    val view = LocalView.current
+    val activity = remember(context) { context.findActivity() }
     var image by remember(uri) { mutableStateOf<ImageBitmap?>(null) }
     var error by remember(uri) { mutableStateOf<String?>(null) }
     var scale by remember(uri) { mutableStateOf(1f) }
     var offsetX by remember(uri) { mutableStateOf(0f) }
     var offsetY by remember(uri) { mutableStateOf(0f) }
+    var chromeVisible by remember(uri) { mutableStateOf(true) }
     val transformableState = rememberTransformableState { zoomChange, panChange, _ ->
         val nextScale = (scale * zoomChange).coerceIn(1f, 6f)
         if (nextScale == 1f) {
@@ -180,6 +194,30 @@ private fun FullscreenImageViewer(
             offsetY += panChange.y
         }
         scale = nextScale
+    }
+
+    DisposableEffect(activity, view) {
+        val window = activity?.window
+        if (window == null) {
+            onDispose { }
+        } else {
+            WindowCompat.setDecorFitsSystemWindows(window, false)
+            val controller = WindowCompat.getInsetsController(window, view)
+            controller.systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            controller.hide(WindowInsetsCompat.Type.systemBars())
+
+            onDispose {
+                controller.show(WindowInsetsCompat.Type.systemBars())
+                WindowCompat.setDecorFitsSystemWindows(window, true)
+            }
+        }
+    }
+
+    LaunchedEffect(uri) {
+        chromeVisible = true
+        delay(1500)
+        chromeVisible = false
     }
 
     LaunchedEffect(uri) {
@@ -200,7 +238,10 @@ private fun FullscreenImageViewer(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black),
+            .background(Color.Black)
+            .pointerInput(uri) {
+                detectTapGestures { chromeVisible = !chromeVisible }
+            },
     ) {
         when {
             error != null -> Text(
@@ -232,22 +273,24 @@ private fun FullscreenImageViewer(
                     .transformable(transformableState),
             )
         }
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .align(Alignment.TopStart)
-                .background(Color(0x99000000))
-                .padding(horizontal = 8.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            TextButton(onClick = onBack) { Text("←") }
-            Text(
-                text = displayName,
-                color = Color.White,
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
-                maxLines = 1,
-            )
+        if (chromeVisible) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.TopStart)
+                    .background(Color(0x99000000))
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TextButton(onClick = onBack) { Text("←") }
+                Text(
+                    text = displayName,
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                    maxLines = 1,
+                )
+            }
         }
     }
 }
@@ -372,3 +415,9 @@ private fun ContentResolver.readText(uri: Uri): String =
 
 private fun String.escapeHtml(): String =
     replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
+}

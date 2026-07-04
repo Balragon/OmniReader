@@ -17,7 +17,7 @@
 - 뷰어 피벗 완료: ACTION_VIEW/SEND 인텐트 → SingleDocumentViewerScreen
   (앱 실행 중 새 파일 intent도 즉시 반영)
   (md/txt 렌더, docx 즉석 변환+MD 저장, html JS차단 표시, pdf 내장 렌더러,
-  이미지 네이티브 화면맞춤+핀치줌). 홈 = 파일 열기 + 최근 파일 + 내 폴더.
+  이미지 네이티브 몰입형 화면맞춤+핀치줌). 홈 = 파일 열기 + 최근 파일 + 내 폴더.
 - 볼트(내 폴더): 파일 목록(전 형식) → md는 Reader→편집기, DOCX 가져오기,
   DOCX 내보내기(reader의 "DOCX" 버튼), 새 노트 → 편집기 직행,
   `.md` 노트는 목록/편집기에서 확인창 후 삭제.
@@ -48,7 +48,7 @@
 |---|---|---|
 | R8 × flexmark | 클래스 병합이 DependencyResolver를 깨서 시작 즉시 crash | `-keepnames com.vladsch.flexmark.**` 유지 (proguard-rules.pro) |
 | Android SAX × mammoth | libcore가 SAXParserFactoryImpl 하드코딩, 보안 feature 거부 → 기기에서 import 전멸. JVM 테스트로 재현 불가 | 패치 jar `app/libs/mammoth-1.9.0-android.jar` 사용. 재생성: tools/mammoth-android-patch/README.md |
-| 이미지 WebView 표시 | WebView 기반 JPG 표시가 갤러리식 화면맞춤과 다르게 보이고 일부 content URI에서 검은 화면 위험 | 이미지 뷰어는 WebView가 아니라 네이티브 Compose Image + ContentScale.Fit 사용 |
+| 이미지 WebView/시스템 바 표시 | WebView 기반 JPG 표시와 일반 앱 창 시스템 바가 갤러리식 전체화면과 다르게 보임 | 이미지 뷰어는 네이티브 Compose Image + ContentScale.Fit, 표시 중 시스템 바 숨김 |
 | TextFieldState.undoState | 한글 조합 자모 단계를 전부 개별 undo 항목으로 기록 | 사용 금지 — ComposeEditorPort의 자체 스냅샷 undo 유지 |
 | connectedAndroidTest | 종료 시 앱 제거 → 볼트 설정 소실 | 테스트 후 release 재설치 + 볼트 재선택 |
 | API 35 DocumentsProvider | 자체 provider 직접 접근 SecurityException | 성능 측정은 앱 내 Spike 화면으로 (instrumentation 테스트는 @Ignore) |
