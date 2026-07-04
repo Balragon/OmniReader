@@ -1,14 +1,13 @@
 # S5 Spike Report — Compose TextFieldState 에디터 한글 안정성
 
-상태: **구현 완료, 실기기 판정 대기** (2026-07-03)
+상태: **Gboard 예비 판정 통과 (undo 수정 후 재확인 대기), Samsung Keyboard 판정 잔여** (2026-07-04)
 
 ## 구현
 
 - `EditorPort` (editor/EditorPort.kt): buffer, selection, undo/redo, 스크롤 위치.
   판정 실패 시 AppCompatEditText + AndroidView 구현으로 이 인터페이스 뒤에서만 교체
-- `ComposeEditorPort`: TextFieldState 기반. undo/redo는 자체 구현하지 않고
-  `TextFieldState.undoState` 사용 (experimental — Foundation은 compose BOM
-  2024.09.03으로 version catalog에 고정)
+- `ComposeEditorPort`: TextFieldState 기반. undo/redo는 **자체 debounce 스냅샷
+  스택** — 아래 "undoState 판정" 참조 (원래 지침이던 undoState는 폐기)
 - `MarkdownEditorScreen`: BasicTextField(state) + Undo/Redo 버튼
 - 판정용 50KB 한글 샘플은 `s5KoreanSample()`이 기기에서 생성
   (마크다운 문법 + 한글 혼합, 도깨비불 유발 문구 포함)
@@ -35,3 +34,23 @@
 |---|---|---|---|---|
 | Samsung Keyboard | ⬜ | ⬜ | ⬜ | |
 | Gboard | ⬜ | ⬜ | ⬜ | |
+
+## 2026-07-04 Gboard 예비 판정 (에뮬레이터)
+
+- 조합 깨짐 / 커서 점프: **이상 없음** (사용자 수동 판정)
+- undo: "작동 안 함" 보고 → instrumentation으로 재현·원인 확정
+
+### undoState 판정: 폐기
+
+`TextFieldState.undoState`는 한글 IME 조합의 자모 단계(ㅅ→서→설)를 **전부
+개별 undo 항목으로 기록**한다 — merge가 연속 "삽입"에만 적용되고 조합
+업데이트는 "치환"이라 merge 불가 (foundation 1.7.2 TextUndoManager 소스 확인).
+Undo 한 번에 자모 한 단계만 돌아가 사실상 무용.
+InputConnection을 직접 잡아 setComposingText를 주입하는
+`EditorImeCompositionUndoTest`로 결정적으로 재현했다.
+
+처치: ComposeEditorPort에 자체 undo — 타이핑이 350ms 멈출 때마다 스냅샷 기록
+(버스트 단위 undo, 용량 100). EditorPort 인터페이스 불변, 화면 코드 불변.
+androidTest 5개(일반 타이핑 2 + 조합 3)로 회귀 방지.
+
+잔여: Gboard로 undo 재확인(사용자), Samsung Keyboard 전체 판정(Galaxy).
