@@ -21,6 +21,17 @@
 > - 보류: <하다 만 것, 알게 됐지만 안 고친 것 — 없으면 생략>
 > ```
 
+### 2026-07-04 Codex (5998326..HEAD)
+- 요지: 이미지/PDF를 같은 미디어 뷰어 크롬으로 통일(고정 뒤로가기 바)하고,
+  PDF에 핀치 줌/확대 후 이동 레이어를 추가. 테스트용 mdvault PNG/JPG/PDF 정리.
+- 검증: `./gradlew test assembleRelease` 통과. release APK 에뮬레이터 설치 후
+  JPG/PDF content URI 열기, 고정 `←`/파일명/시스템 내비게이션 바/PDF 페이지 렌더
+  UI 트리 확인. Galaxy release APK 설치 성공 및 crash buffer 이상 없음.
+- ⚠️ ADB 자동화로 실제 두 손가락 핀치 동작 자체는 재현하지 못함. PDF 줌은
+  Compose transformable 경로로 빌드 검증됨.
+- 보류: Galaxy는 검증 중 잠금 화면이 앞에 떠서 UI 트리 확인은 중단
+  (잠금 해제 우회 안 함). 설치와 crash buffer 확인까지만 완료.
+
 ### 2026-07-04 Codex (0f18022..5998326)
 - 요지: 노트 삭제(확인 다이얼로그+최근 목록 정리), 이미지 뷰어를 WebView에서
   네이티브 몰입형으로 교체, 실행 중 새 intent 즉시 반영
@@ -46,7 +57,8 @@
 - 뷰어 피벗 완료: ACTION_VIEW/SEND 인텐트 → SingleDocumentViewerScreen
   (앱 실행 중 새 파일 intent도 즉시 반영)
   (md/txt 렌더, docx 즉석 변환+MD 저장, html JS차단 표시, pdf 내장 렌더러,
-  이미지 네이티브 몰입형 화면맞춤+핀치 줌). 홈 = 파일 열기 + 최근 파일 + 내 폴더.
+  PDF 핀치 줌, 이미지 네이티브 화면맞춤+핀치 줌, 이미지/PDF 고정 상단 바).
+  홈 = 파일 열기 + 최근 파일 + 내 폴더.
 - 볼트(내 폴더): 파일 목록(전 형식) → md는 Reader→편집기, DOCX 가져오기,
   DOCX 내보내기(reader의 "DOCX" 버튼), 새 노트 → 편집기 직행,
   `.md` 노트는 목록/편집기에서 확인창 후 삭제.
@@ -67,8 +79,8 @@
    원인: VaultRepository.list()가 매 호출 root부터 경로 재해석 + 커서 이중
    순회. 개선안: documentId 캐시(path→docId, 쓰기 시 무효화).
    측정: 앱 Spike → S4 버튼 (perf/ 폴더에 파일 200개 필요).
-3. 읽기 경험 개선(dogfooding friction 순): 글꼴 크기 설정, pdf 핀치 줌 등
-   사용자가 보고하는 순서대로.
+3. 읽기 경험 개선(dogfooding friction 순): 글꼴 크기 설정 등 사용자가 보고하는
+   순서대로.
 4. S3 잔여: Word/Google Docs 수동 확인 (spike/S3-MANUAL-VERIFICATION.md).
 
 ## 지뢰 (모르면 다시 밟는다)
@@ -77,7 +89,7 @@
 |---|---|---|
 | R8 × flexmark | 클래스 병합이 DependencyResolver를 깨서 시작 즉시 crash | `-keepnames com.vladsch.flexmark.**` 유지 (proguard-rules.pro) |
 | Android SAX × mammoth | libcore가 SAXParserFactoryImpl 하드코딩, 보안 feature 거부 → 기기에서 import 전멸. JVM 테스트로 재현 불가 | 패치 jar `app/libs/mammoth-1.9.0-android.jar` 사용. 재생성: tools/mammoth-android-patch/README.md |
-| 이미지 WebView/시스템 바 표시 | WebView 기반 JPG 표시와 일반 앱 창 시스템 바가 갤러리식 전체화면과 다르게 보임 | 이미지 뷰어는 네이티브 Compose Image + ContentScale.Fit, 표시 중 시스템 바 숨김, 탭하면 시스템 바 표시 |
+| 이미지/PDF 뷰어 크롬 | 숨김/터치 reveal 방식은 자동화에서 컨트롤 표시가 안정적으로 잡히지 않았음 | 이미지/PDF는 같은 고정 상단 바(`←`+파일명) 사용. 이미지/PDF 본문은 검은 배경 + 화면맞춤/줌 유지 |
 | TextFieldState.undoState | 한글 조합 자모 단계를 전부 개별 undo 항목으로 기록 | 사용 금지 — ComposeEditorPort의 자체 스냅샷 undo 유지 |
 | connectedAndroidTest | 종료 시 앱 제거 → 볼트 설정 소실 | 테스트 후 release 재설치 + 볼트 재선택 |
 | API 35 DocumentsProvider | 자체 provider 직접 접근 SecurityException | 성능 측정은 앱 내 Spike 화면으로 (instrumentation 테스트는 @Ignore) |

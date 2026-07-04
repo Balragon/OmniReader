@@ -7,8 +7,8 @@ import android.content.ContextWrapper
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.provider.OpenableColumns
-import android.view.View
 import android.webkit.WebView
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -25,7 +25,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -41,10 +40,8 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.core.view.WindowCompat
 import dev.gold.mdvault.document.DocumentKind
 import dev.gold.mdvault.document.DocumentTypeDetector
 import dev.gold.mdvault.document.DocxToMarkdownImporter
@@ -99,10 +96,15 @@ fun SingleDocumentViewerScreen(
 
     val currentState = state
     if (currentState is ViewerState.Image) {
-        FullscreenImageViewer(
-            uri = currentState.uri,
-            displayName = displayName,
-        )
+        MediaViewerScaffold(displayName = displayName, onBack = onBack) {
+            FullscreenImageContent(uri = currentState.uri, displayName = displayName)
+        }
+        return
+    }
+    if (currentState is ViewerState.Pdf) {
+        MediaViewerScaffold(displayName = displayName, onBack = onBack) {
+            PdfPagesView(uri, modifier = Modifier.fillMaxSize())
+        }
         return
     }
 
@@ -155,7 +157,7 @@ fun SingleDocumentViewerScreen(
                 modifier = Modifier.padding(24.dp),
             )
             is ViewerState.Image -> Unit
-            is ViewerState.Pdf -> PdfPagesView(uri, modifier = Modifier.fillMaxSize())
+            is ViewerState.Pdf -> Unit
             is ViewerState.Web -> DocumentWebViewer(
                 state = currentState,
                 modifier = Modifier.fillMaxSize(),
@@ -165,13 +167,53 @@ fun SingleDocumentViewerScreen(
 }
 
 @Composable
-private fun FullscreenImageViewer(
+private fun MediaViewerScaffold(
+    displayName: String,
+    onBack: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    BackHandler(onBack = onBack)
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color.Black)
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TextButton(onClick = onBack) {
+                Text("←", color = Color.White)
+            }
+            Text(
+                text = displayName,
+                color = Color.White,
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                maxLines = 1,
+            )
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .background(Color.Black),
+        ) {
+            content()
+        }
+    }
+}
+
+@Composable
+private fun FullscreenImageContent(
     uri: Uri,
     displayName: String,
 ) {
     val context = LocalContext.current
-    val view = LocalView.current
-    val activity = remember(context) { context.findActivity() }
     var image by remember(uri) { mutableStateOf<ImageBitmap?>(null) }
     var error by remember(uri) { mutableStateOf<String?>(null) }
     var scale by remember(uri) { mutableStateOf(1f) }
@@ -187,30 +229,6 @@ private fun FullscreenImageViewer(
             offsetY += panChange.y
         }
         scale = nextScale
-    }
-
-    DisposableEffect(activity, view) {
-        val window = activity?.window
-        if (window == null) {
-            onDispose { }
-        } else {
-            @Suppress("DEPRECATION")
-            val previousSystemUiVisibility = view.systemUiVisibility
-            WindowCompat.setDecorFitsSystemWindows(window, false)
-            @Suppress("DEPRECATION")
-            view.systemUiVisibility = View.SYSTEM_UI_FLAG_IMMERSIVE or
-                View.SYSTEM_UI_FLAG_FULLSCREEN or
-                View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
-                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
-                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
-                View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-
-            onDispose {
-                @Suppress("DEPRECATION")
-                view.systemUiVisibility = previousSystemUiVisibility
-                WindowCompat.setDecorFitsSystemWindows(window, true)
-            }
-        }
     }
 
     LaunchedEffect(uri) {

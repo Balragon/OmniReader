@@ -6,7 +6,11 @@ import android.graphics.Color
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.os.ParcelFileDescriptor
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -24,7 +28,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -38,11 +44,26 @@ import java.io.Closeable
  * PDF 페이지 세로 스크롤 뷰 — Android 내장 PdfRenderer 사용 (의존성 0개).
  * 페이지 비트맵은 LazyColumn이 화면 밖 항목을 폐기하며 자연 회수된다.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun PdfPagesView(uri: Uri, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     var error by remember(uri) { mutableStateOf<String?>(null) }
     var holder by remember(uri) { mutableStateOf<PdfDocumentHolder?>(null) }
+    var scale by remember(uri) { mutableStateOf(1f) }
+    var offsetX by remember(uri) { mutableStateOf(0f) }
+    var offsetY by remember(uri) { mutableStateOf(0f) }
+    val transformableState = rememberTransformableState { zoomChange, panChange, _ ->
+        val nextScale = (scale * zoomChange).coerceIn(1f, 5f)
+        if (nextScale == 1f) {
+            offsetX = 0f
+            offsetY = 0f
+        } else {
+            offsetX += panChange.x
+            offsetY += panChange.y
+        }
+        scale = nextScale
+    }
 
     DisposableEffect(uri) {
         val opened = try {
@@ -58,14 +79,38 @@ fun PdfPagesView(uri: Uri, modifier: Modifier = Modifier) {
     when {
         error != null -> Text(
             text = "PDF를 열 수 없습니다: $error",
+            color = ComposeColor.White,
             modifier = Modifier.padding(24.dp),
         )
-        holder == null -> Text(text = "여는 중…", modifier = Modifier.padding(24.dp))
+        holder == null -> Text(
+            text = "여는 중…",
+            color = ComposeColor.White,
+            modifier = Modifier.padding(24.dp),
+        )
         else -> {
             val document = holder!!
-            LazyColumn(modifier = modifier.fillMaxSize()) {
-                items((0 until document.pageCount).toList()) { pageIndex ->
-                    PdfPageItem(document, pageIndex)
+            Box(
+                modifier = modifier
+                    .fillMaxSize()
+                    .background(ComposeColor.Black)
+                    .transformable(
+                        state = transformableState,
+                        canPan = { scale > 1f },
+                    ),
+            ) {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer(
+                            scaleX = scale,
+                            scaleY = scale,
+                            translationX = offsetX,
+                            translationY = offsetY,
+                        ),
+                ) {
+                    items((0 until document.pageCount).toList()) { pageIndex ->
+                        PdfPageItem(document, pageIndex)
+                    }
                 }
             }
         }
