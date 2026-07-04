@@ -138,7 +138,18 @@ private fun VaultWebView(
                     settings.blockNetworkLoads = true
                     settings.allowFileAccess = false
                     settings.allowContentAccess = false
-                    webViewClient = VaultWebViewClient(vaultRepository, context, onOpenNote)
+                    webViewClient = DocumentWebViewClient(
+                        context = context,
+                        onOpenNote = onOpenNote,
+                        loadAsset = { path ->
+                            runCatching {
+                                // WebView IO 스레드에서 호출됨 — blocking 안전. 최근 문서 오염 방지.
+                                runBlocking {
+                                    vaultRepository.read(path, trackRecent = false) { it.readBytes() }
+                                }
+                            }.getOrNull()
+                        },
+                    )
                     loadDataWithBaseURL(vaultBaseUrl(baseDirectory), html, "text/html", "utf-8", null)
                 }
             },
@@ -146,19 +157,24 @@ private fun VaultWebView(
     }
 }
 
-private const val VAULT_HOST = "vault.local"
+internal const val VAULT_HOST = "vault.local"
 
-private fun vaultBaseUrl(baseDirectory: String): String {
+internal fun vaultBaseUrl(baseDirectory: String): String {
     val builder = Uri.Builder().scheme("https").authority(VAULT_HOST)
     baseDirectory.split('/').filter { it.isNotBlank() }.forEach { builder.appendPath(it) }
     val url = builder.build().toString()
     return if (url.endsWith("/")) url else "$url/"
 }
 
-private class VaultWebViewClient(
-    private val vaultRepository: VaultRepository,
+/**
+ * 문서 WebView 공통 클라이언트. vault.local 요청은 loadAsset으로 해석
+ * (vault, 캐시 폴더, 단일 URI 등 소스는 호출자가 주입). 외부 링크는 외부
+ * 브라우저로, 내부 .md 링크는 onOpenNote로 위임.
+ */
+internal class DocumentWebViewClient(
     private val context: Context,
-    private val onOpenNote: (String) -> Unit,
+    private val loadAsset: (String) -> ByteArray?,
+    private val onOpenNote: ((String) -> Unit)? = null,
 ) : WebViewClient() {
 
     override fun shouldInterceptRequest(
@@ -167,32 +183,25 @@ private class VaultWebViewClient(
     ): WebResourceResponse? {
         val url = request.url
         if (url.host != VAULT_HOST) return null
-        val vaultPath = url.path.orEmpty().trimStart('/')
-        if (vaultPath.isEmpty()) return null
-        return try {
-            // WebView IO 스레드에서 호출됨 — blocking 안전. 최근 문서 오염 방지.
-            val bytes = runBlocking {
-                vaultRepository.read(vaultPath, trackRecent = false) { it.readBytes() }
-            }
-            WebResourceResponse(mimeTypeFor(vaultPath), null, ByteArrayInputStream(bytes))
-        } catch (e: Exception) {
-            null
-        }
+        val assetPath = url.path.orEmpty().trimStart('/')
+        if (assetPath.isEmpty()) return null
+        val bytes = loadAsset(assetPath) ?: return null
+        return WebResourceResponse(mimeTypeFor(assetPath), null, ByteArrayInputStream(bytes))
     }
 
     override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
         val url = request.url
         if (url.host == VAULT_HOST) {
-            val vaultPath = url.path.orEmpty().trimStart('/')
-            if (vaultPath.endsWith(".md", ignoreCase = true)) {
-                onOpenNote(vaultPath)
+            val assetPath = url.path.orEmpty().trimStart('/')
+            if (assetPath.endsWith(".md", ignoreCase = true)) {
+                onOpenNote?.invoke(assetPath)
             }
             return true
         }
         if (url.scheme == "http" || url.scheme == "https") {
             runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, url)) }
         }
-        return true // reader는 문서 하나만 표시 — WebView 내 탐색 금지
+        return true // 뷰어는 문서 하나만 표시 — WebView 내 탐색 금지
     }
 
     private fun mimeTypeFor(path: String): String =
@@ -201,6 +210,7 @@ private class VaultWebViewClient(
             "jpg", "jpeg" -> "image/jpeg"
             "gif" -> "image/gif"
             "webp" -> "image/webp"
+            "bmp" -> "image/bmp"
             "svg" -> "image/svg+xml"
             "md", "txt" -> "text/plain"
             else -> "application/octet-stream"

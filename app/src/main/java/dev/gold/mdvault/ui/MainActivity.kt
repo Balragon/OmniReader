@@ -1,5 +1,6 @@
 package dev.gold.mdvault.ui
 
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -31,6 +32,7 @@ import dev.gold.mdvault.editor.ComposeEditorPort
 import dev.gold.mdvault.editor.MarkdownEditorScreen
 import dev.gold.mdvault.editor.s5KoreanSample
 import dev.gold.mdvault.preview.MarkdownReaderScreen
+import dev.gold.mdvault.preview.SingleDocumentViewerScreen
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -44,13 +46,34 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val externalUri = externalDocumentUri(intent)
         setContent {
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    MdvaultApp(container)
+                    if (externalUri != null) {
+                        // "내 파일" 등에서 연결 앱으로 열린 경우 — 뷰어만 표시,
+                        // 뒤로 가면 원래 앱으로 복귀 (볼트 설정 불필요)
+                        SingleDocumentViewerScreen(
+                            uri = externalUri,
+                            markdownEngine = container.markdownEngine,
+                            docxImporter = container.docxToMarkdownImporter,
+                            recentFiles = container.recentFilesRepository,
+                            onBack = { finish() },
+                        )
+                    } else {
+                        MdvaultApp(container)
+                    }
                 }
             }
         }
+    }
+
+    private fun externalDocumentUri(intent: Intent?): Uri? = when (intent?.action) {
+        Intent.ACTION_VIEW -> intent.data
+        Intent.ACTION_SEND ->
+            @Suppress("DEPRECATION")
+            intent.getParcelableExtra(Intent.EXTRA_STREAM)
+        else -> null
     }
 }
 

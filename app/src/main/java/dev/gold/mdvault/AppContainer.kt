@@ -9,6 +9,7 @@ import dev.gold.mdvault.docx.SimpleOoxmlDocxExportEngine
 import dev.gold.mdvault.markdown.FlexmarkMarkdownEngine
 import dev.gold.mdvault.markdown.JsoupHtmlCleaner
 import dev.gold.mdvault.markdown.MarkdownEngine
+import dev.gold.mdvault.storage.RecentFilesRepository
 import dev.gold.mdvault.storage.VaultRepository
 
 /**
@@ -18,6 +19,7 @@ class AppContainer(context: android.content.Context) {
     private val applicationContext = context.applicationContext
 
     val vaultRepository: VaultRepository = VaultRepository(applicationContext)
+    val recentFilesRepository: RecentFilesRepository = RecentFilesRepository(applicationContext)
     val htmlCleaner: JsoupHtmlCleaner = JsoupHtmlCleaner()
     val markdownEngine: MarkdownEngine = FlexmarkMarkdownEngine(htmlCleaner)
     val docxImportEngine: DocxImportEngine = MammothDocxImportEngine()
