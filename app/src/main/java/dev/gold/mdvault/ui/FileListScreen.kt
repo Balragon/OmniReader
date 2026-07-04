@@ -57,6 +57,7 @@ fun FileListScreen(
     onNavigateUp: () -> Unit,
     onOpenDirectory: (String) -> Unit,
     onOpenFile: (String) -> Unit,
+    onEditFile: (String) -> Unit,
     onOpenDocument: (Uri) -> Unit,
     onOpenVaultSetup: () -> Unit,
     modifier: Modifier = Modifier,
@@ -89,7 +90,8 @@ fun FileListScreen(
                 }
                 status = null
                 refresh()
-                onOpenFile(path)
+                // 새 노트는 빈 문서 — 읽기 화면(검정 화면)이 아니라 바로 편집기로
+                onEditFile(path)
             } catch (e: Exception) {
                 status = "새 노트 생성 실패: ${e.userMessage()}"
             }

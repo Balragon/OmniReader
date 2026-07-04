@@ -18,6 +18,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import dev.gold.mdvault.BuildConfig
 import dev.gold.mdvault.storage.VaultRepository
 import kotlinx.coroutines.launch
 
@@ -69,11 +70,14 @@ fun VaultSetupScreen(
             }
         }
         Spacer(modifier = Modifier.weight(1f))
-        TextButton(
-            onClick = onOpenSpike,
-            modifier = Modifier.align(Alignment.CenterHorizontally),
-        ) {
-            Text("Spike")
+        // 개발 진단 화면(성능 측정·IME 판정) — debug 빌드에서만 노출
+        if (BuildConfig.DEBUG) {
+            TextButton(
+                onClick = onOpenSpike,
+                modifier = Modifier.align(Alignment.CenterHorizontally),
+            ) {
+                Text("Spike")
+            }
         }
     }
 }

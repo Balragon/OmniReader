@@ -66,7 +66,13 @@ fun MarkdownReaderScreen(
                 val markdown = vaultRepository.read(relativePath) { input ->
                     input.readBytes().decodeToString()
                 }
-                html = PreviewHtmlBuilder.build(markdownEngine.toHtml(markdown))
+                html = if (markdown.isBlank()) {
+                    PreviewHtmlBuilder.build(
+                        "<p style=\"opacity:0.6\">빈 문서입니다 — 오른쪽 위 \"편집\"을 눌러 작성하세요.</p>",
+                    )
+                } else {
+                    PreviewHtmlBuilder.build(markdownEngine.toHtml(markdown))
+                }
             } catch (e: Exception) {
                 error = e.message ?: e.javaClass.simpleName
             }

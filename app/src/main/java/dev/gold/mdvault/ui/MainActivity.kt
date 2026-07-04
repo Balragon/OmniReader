@@ -179,6 +179,10 @@ private fun MdvaultApp(container: AppContainer) {
                         editorPath = path
                         screen = Screen.Reader
                     },
+                    onEditFile = { path ->
+                        editorPath = path
+                        screen = Screen.Editor
+                    },
                     onOpenDocument = { uri -> viewerUri = uri },
                     onOpenVaultSetup = { screen = Screen.VaultSetup },
                 )

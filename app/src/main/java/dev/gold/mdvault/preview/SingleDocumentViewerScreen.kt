@@ -141,8 +141,6 @@ fun SingleDocumentViewerScreen(
                                 settings.setSupportZoom(true)
                                 settings.builtInZoomControls = true
                                 settings.displayZoomControls = false
-                                settings.useWideViewPort = true
-                                settings.loadWithOverviewMode = true
                             }
                             webViewClient = DocumentWebViewClient(
                                 context = context,
@@ -200,8 +198,15 @@ private fun loadDocument(
         val extension = displayName.substringAfterLast('.', "png").lowercase()
         val assetName = "image.$extension"
         ViewerState.Web(
-            html = "<html><body style=\"margin:0;background:#111\">" +
-                "<img src=\"$assetName\" style=\"width:100%;height:auto\"></body></html>",
+            // 갤러리처럼 화면 안에 전체가 들어오게(contain) — 핀치 줌으로 확대.
+            // vh/flex는 WebView wide-viewport에서 높이가 0으로 계산될 수 있어
+            // position:fixed + object-fit:contain 사용.
+            html = "<html><head>" +
+                "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">" +
+                "</head><body style=\"margin:0;background:#111\">" +
+                "<img src=\"$assetName\" " +
+                "style=\"position:fixed;top:0;left:0;width:100%;height:100%;object-fit:contain\">" +
+                "</body></html>",
             loadAsset = { key ->
                 if (key == assetName) {
                     runCatching {
