@@ -147,6 +147,13 @@ private fun MdvaultApp(container: AppContainer) {
                 screen = Screen.FileList
             },
             onOpenSpike = { screen = Screen.Spike },
+            onBack = {
+                screen = if ((vaultState as? VaultState.Ready)?.treeUri == null) {
+                    Screen.Home
+                } else {
+                    Screen.FileList
+                }
+            },
         )
         Screen.FileList -> {
             val vaultTreeUri = (vaultState as? VaultState.Ready)?.treeUri
@@ -160,6 +167,7 @@ private fun MdvaultApp(container: AppContainer) {
                         screen = Screen.FileList
                     },
                     onOpenSpike = { screen = Screen.Spike },
+                    onBack = { screen = Screen.Home },
                 )
             } else {
                 FileListScreen(

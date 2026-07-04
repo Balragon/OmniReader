@@ -4,7 +4,7 @@
 > 이어받는다. **작업을 마친 에이전트는 반드시 "현재 상태"와 "다음 작업"을
 > 갱신하고 커밋할 것.** 규칙의 원본은 CLAUDE.md (여기 복제 금지).
 
-최종 갱신: 2026-07-04 (Claude Code)
+최종 갱신: 2026-07-04 (Codex)
 
 ## 제품 한 줄
 
@@ -19,6 +19,8 @@
   이미지 화면맞춤+핀치줌). 홈 = 파일 열기 + 최근 파일 + 내 폴더.
 - 볼트(내 폴더): 파일 목록(전 형식) → md는 Reader→편집기, DOCX 가져오기,
   DOCX 내보내기(reader의 "DOCX" 버튼), 새 노트 → 편집기 직행.
+- 폴더 변경 화면(VaultSetup): 시스템 뒤로가기 → 기존 볼트가 있으면 파일
+  목록으로 복귀, 아직 볼트가 없으면 홈으로 복귀.
 - 에디터: Compose TextFieldState + **자체 debounce(350ms) 스냅샷 undo**
   (undoState는 한글 조합 자모 단계를 개별 기록해 폐기 — spike/S5-REPORT.md).
 - 검증 인프라: JVM 테스트 ~28개, instrumentation 5개(한글 조합 포함),
@@ -34,11 +36,9 @@
    원인: VaultRepository.list()가 매 호출 root부터 경로 재해석 + 커서 이중
    순회. 개선안: documentId 캐시(path→docId, 쓰기 시 무효화).
    측정: 앱 Spike → S4 버튼 (perf/ 폴더에 파일 200개 필요).
-3. **VaultSetup 뒤로가기** — 폴더 변경 화면에서 시스템 뒤로가기가 앱을
-   종료시킴. 목록으로 복귀해야 함 (BackHandler 부재).
-4. 읽기 경험 개선(dogfooding friction 순): 글꼴 크기 설정, pdf 핀치 줌 등
+3. 읽기 경험 개선(dogfooding friction 순): 글꼴 크기 설정, pdf 핀치 줌 등
    사용자가 보고하는 순서대로.
-5. S3 잔여: Word/Google Docs 수동 확인 (spike/S3-MANUAL-VERIFICATION.md).
+4. S3 잔여: Word/Google Docs 수동 확인 (spike/S3-MANUAL-VERIFICATION.md).
 
 ## 지뢰 (모르면 다시 밟는다)
 

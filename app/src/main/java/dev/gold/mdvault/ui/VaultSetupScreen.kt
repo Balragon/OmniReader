@@ -1,6 +1,7 @@
 package dev.gold.mdvault.ui
 
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -28,6 +29,7 @@ fun VaultSetupScreen(
     vaultTreeUri: Uri?,
     onVaultSelected: () -> Unit,
     onOpenSpike: () -> Unit,
+    onBack: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val scope = rememberCoroutineScope()
@@ -40,6 +42,10 @@ fun VaultSetupScreen(
             vaultRepository.setVaultTreeUri(uri)
             onVaultSelected()
         }
+    }
+
+    if (onBack != null) {
+        BackHandler(onBack = onBack)
     }
 
     Column(
