@@ -9,7 +9,7 @@
 | S2 | flexmark round-trip + jsoup cleaner | Codex | ✅ 완료 (테스트 통과) |
 | S3 | 수제 OOXML writer (의존성 0개) | Claude Code | ✅ 성공 (spike/S3-REPORT.md, Word/GDocs 수동확인 잔여) |
 | S4 | SAF repository (DocumentsContract 직접) | Codex | 코드 완료 — 실기기 500ms 측정 대기 |
-| S5 | Compose editor 한글 안정성 판정 (실기기) | Claude Code | 구현 완료 — 실기기 IME 판정 대기 (spike/S5-REPORT.md) |
+| S5 | Compose editor 한글 안정성 판정 (실기기) | Claude Code | Gboard ✅ 통과 (undo는 자체 스냅샷 구현) — Samsung Keyboard(Galaxy)만 잔여 |
 
 **게이트: ✅ 해제 (S1·S3 성공, 2026-07-03) — Phase 2 착수 가능.**
 

@@ -1,6 +1,6 @@
 # S5 Spike Report — Compose TextFieldState 에디터 한글 안정성
 
-상태: **Gboard 예비 판정 통과 (undo 수정 후 재확인 대기), Samsung Keyboard 판정 잔여** (2026-07-04)
+상태: **Gboard 판정 통과 (undo 수정 포함 전체 확인, 2026-07-04). Samsung Keyboard(Galaxy) 판정만 잔여**
 
 ## 구현
 
@@ -33,7 +33,7 @@
 | 키보드 | 조합 깨짐 | 커서 점프 | undo 불일치 | 비고 |
 |---|---|---|---|---|
 | Samsung Keyboard | ⬜ | ⬜ | ⬜ | |
-| Gboard | ⬜ | ⬜ | ⬜ | |
+| Gboard (에뮬레이터) | ✅ 없음 | ✅ 없음 | ✅ 없음 | 2026-07-04, 스냅샷 undo 적용 후 사용자 확인 |
 
 ## 2026-07-04 Gboard 예비 판정 (에뮬레이터)
 
@@ -53,4 +53,4 @@ InputConnection을 직접 잡아 setComposingText를 주입하는
 (버스트 단위 undo, 용량 100). EditorPort 인터페이스 불변, 화면 코드 불변.
 androidTest 5개(일반 타이핑 2 + 조합 3)로 회귀 방지.
 
-잔여: Gboard로 undo 재확인(사용자), Samsung Keyboard 전체 판정(Galaxy).
+2026-07-04 사용자 확인: 수정 후 undo 정상 작동. 잔여: Samsung Keyboard 전체 판정(Galaxy).
