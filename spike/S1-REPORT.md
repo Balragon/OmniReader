@@ -57,11 +57,14 @@ data class HtmlImportResult(html, warnings: List<ConversionWarning>, extractedAs
 - 이미지는 base64 삽입 없이 sink로 즉시 externalize, HTML에는 상대경로만
 - Mammoth 문자열 warning → `ConversionWarning.UnsupportedFeature`로 매핑
 
-## 5. 잔여: 실기기 측정 절차 (Galaxy 연결 후)
+## 5. 실기기 측정 결과 (2026-07-04, Galaxy S21 Ultra / SM-G998N / Android 15, release+R8)
 
-1. `adb install app/build/outputs/apk/release/app-release.apk`
-2. 앱 실행 → "Import DOCX" → fixtures/docx/simple-korean.docx, images.docx 선택
-3. 화면에 표시되는 elapsed ms 기록 → 이 리포트에 추기
+| fixture | 시간 | 비고 |
+|---|---|---|
+| simple-korean.docx (2.6KB) | **67ms** | warnings 0 |
+| images.docx (11MB, 이미지 5장) | **401ms** | asset 5개 추출, warnings 0 |
+
+→ 체감 즉시 수준. **S1 spike 전 항목 종료 — 최종 판정 성공.**
 
 ---
 

@@ -5,10 +5,10 @@
 | ID | 내용 | 담당 | 상태 |
 |----|------|------|------|
 | S0 | fixture 준비 (fixtures/docx, fixtures/md) | Codex | ✅ 완료 (stdlib 생성기, python-docx 불필요) |
-| S1 | Mammoth import spike (R8 통과 + fixture crash 0건) | Claude Code | ✅ 성공 (spike/S1-REPORT.md, 실기기 측정만 잔여) |
+| S1 | Mammoth import spike (R8 통과 + fixture crash 0건) | Claude Code | ✅ **종료** — 실기기 67ms/401ms (spike/S1-REPORT.md) |
 | S2 | flexmark round-trip + jsoup cleaner | Codex | ✅ 완료 (테스트 통과) |
 | S3 | 수제 OOXML writer (의존성 0개) | Claude Code | ✅ 성공 (spike/S3-REPORT.md, Word/GDocs 수동확인 잔여) |
-| S4 | SAF repository (DocumentsContract 직접) | Codex | 코드 완료 — 실기기 500ms 측정 대기 |
+| S4 | SAF repository (DocumentsContract 직접) | Codex | ⚠️ 측정 완료 — 200개 468~969ms로 **목표 500ms 미달** (원인: list()가 매 호출 root부터 재해석, 최적화는 P1) |
 | S5 | Compose editor 한글 안정성 판정 (실기기) | Claude Code | Gboard ✅ 통과 (undo는 자체 스냅샷 구현) — Samsung Keyboard(Galaxy)만 잔여 |
 
 **게이트: ✅ 해제 (S1·S3 성공, 2026-07-03) — Phase 2 착수 가능.**
@@ -28,5 +28,5 @@ S1 실패(R8 불통과 또는 광범위 crash) 시 Mammoth.js WebView sandbox �
 ## Phase 3 — P1 (dogfooding friction 순서대로)
 
 - ✅ DOCX export S3 승격 (reader "DOCX" 버튼, 2026-07-04 에뮬레이터+LibreOffice 검증)
-읽기 경험 개선(글꼴/여백/다크모드), search,
+SAF 목록 조회 최적화(documentId 캐시 — S4 측정 미달분), 읽기 경험 개선(글꼴/여백/다크모드), search,
 share target, table helper, diff view — 우선순위는 dogfooding friction 순

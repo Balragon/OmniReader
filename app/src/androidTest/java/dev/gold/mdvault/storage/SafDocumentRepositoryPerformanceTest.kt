@@ -13,6 +13,11 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import kotlin.system.measureTimeMillis
 
+@org.junit.Ignore(
+    "API 35부터 자체 DocumentsProvider 직접 접근이 SecurityException으로 차단됨 " +
+        "(ACTION_OPEN_DOCUMENT 승인 강제). 측정은 앱 내 Spike > S4 Perf 화면으로 대체 " +
+        "— 실제 vault·실제 승인 경로로 측정.",
+)
 @RunWith(AndroidJUnit4::class)
 class SafDocumentRepositoryPerformanceTest {
     private val context = InstrumentationRegistry.getInstrumentation().context

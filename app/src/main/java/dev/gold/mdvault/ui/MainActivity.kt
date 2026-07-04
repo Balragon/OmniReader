@@ -213,12 +213,52 @@ private fun SpikeHome(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Button(onClick = onBackToHome) { Text("Home") }
-            Button(onClick = { screen = "s1" }) { Text("S1 Import") }
-            Button(onClick = { screen = "s5" }) { Text("S5 Editor") }
+            Button(onClick = { screen = "s1" }) { Text("S1") }
+            Button(onClick = { screen = "s5" }) { Text("S5") }
+            Button(onClick = { screen = "s4" }) { Text("S4") }
         }
         when (screen) {
             "s1" -> S1SpikeScreen(container)
+            "s4" -> S4PerfScreen(container)
             else -> MarkdownEditorScreen(editorPort)
+        }
+    }
+}
+
+/**
+ * S4 spike: 실제 vault의 SAF 목록 조회 시간 측정 (목표 500ms 이하).
+ * 측정 대상 폴더 perf/에 파일 200개를 만들어 두고 실행한다
+ * (instrumentation 자체 provider는 API 35에서 직접 접근이 차단되어 이 방식 사용).
+ */
+@Composable
+private fun S4PerfScreen(container: AppContainer) {
+    var status by remember { mutableStateOf("vault의 perf/ 폴더 목록 조회 5회를 측정합니다") }
+    val scope = rememberCoroutineScope()
+
+    Column(
+        modifier = Modifier.fillMaxSize().padding(24.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Text(text = status, style = MaterialTheme.typography.bodyLarge)
+        Button(onClick = {
+            status = "측정 중…"
+            scope.launch(Dispatchers.IO) {
+                status = try {
+                    val timings = (1..5).map {
+                        val startedAt = System.currentTimeMillis()
+                        val count = container.vaultRepository.list("perf").size
+                        val elapsed = System.currentTimeMillis() - startedAt
+                        elapsed to count
+                    }
+                    val counts = timings.map { it.second }.distinct()
+                    "S4 결과 (${counts}개 항목): " +
+                        timings.joinToString(", ") { "${it.first}ms" }
+                } catch (e: Exception) {
+                    "S4 측정 실패: ${e.message ?: e.javaClass.simpleName}"
+                }
+            }
+        }) {
+            Text("S4 목록 측정")
         }
     }
 }
