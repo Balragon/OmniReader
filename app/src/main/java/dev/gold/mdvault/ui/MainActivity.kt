@@ -23,6 +23,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -104,10 +107,12 @@ private fun MdvaultApp(container: AppContainer) {
     val vaultState by container.vaultRepository.vaultTreeUri
         .map<Uri?, VaultState> { VaultState.Ready(it) }
         .collectAsState(initial = VaultState.Loading)
-    var screen by remember { mutableStateOf(Screen.Home) }
-    var viewerUri by remember { mutableStateOf<Uri?>(null) }
-    var directoryBackStack by remember { mutableStateOf(listOf("")) }
-    var editorPath by remember { mutableStateOf<String?>(null) }
+    var screen by rememberSaveable(stateSaver = ScreenSaver) { mutableStateOf(Screen.Home) }
+    var viewerUriString by rememberSaveable { mutableStateOf<String?>(null) }
+    var directoryBackStack by rememberSaveable(stateSaver = DirectoryBackStackSaver) {
+        mutableStateOf(listOf(""))
+    }
+    var editorPath by rememberSaveable { mutableStateOf<String?>(null) }
 
     LaunchedEffect(vaultState) {
         val ready = vaultState as? VaultState.Ready ?: return@LaunchedEffect
@@ -118,14 +123,18 @@ private fun MdvaultApp(container: AppContainer) {
         }
     }
 
-    val activeViewerUri = viewerUri
+    val activeViewerUri = viewerUriString?.let(Uri::parse)
     if (activeViewerUri != null) {
         SingleDocumentViewerScreen(
             uri = activeViewerUri,
             markdownEngine = container.markdownEngine,
             docxImporter = container.docxToMarkdownImporter,
             recentFiles = container.recentFilesRepository,
-            onBack = { viewerUri = null },
+            onBack = { viewerUriString = null },
+            onOpenVaultSetup = {
+                viewerUriString = null
+                screen = Screen.VaultSetup
+            },
         )
         return
     }
@@ -134,7 +143,7 @@ private fun MdvaultApp(container: AppContainer) {
         Screen.Home -> HomeScreen(
             recentFilesRepository = container.recentFilesRepository,
             canOpenVault = vaultState is VaultState.Ready,
-            onOpenDocument = { uri -> viewerUri = uri },
+            onOpenDocument = { uri -> viewerUriString = uri.toString() },
             onOpenVault = {
                 val ready = vaultState as? VaultState.Ready
                 if (ready != null) {
@@ -199,7 +208,7 @@ private fun MdvaultApp(container: AppContainer) {
                         editorPath = path
                         screen = Screen.Editor
                     },
-                    onOpenDocument = { uri -> viewerUri = uri },
+                    onOpenDocument = { uri -> viewerUriString = uri.toString() },
                     onOpenVaultSetup = { screen = Screen.VaultSetup },
                 )
             }
@@ -217,6 +226,7 @@ private fun MdvaultApp(container: AppContainer) {
                     onEdit = { screen = Screen.Editor },
                     onBack = { screen = Screen.FileList },
                     onOpenNote = { notePath -> editorPath = notePath },
+                    onOpenVaultSetup = { screen = Screen.VaultSetup },
                 )
             }
         }
@@ -233,6 +243,7 @@ private fun MdvaultApp(container: AppContainer) {
                         editorPath = null
                         screen = Screen.FileList
                     },
+                    onOpenVaultSetup = { screen = Screen.VaultSetup },
                 )
             }
         }
@@ -242,6 +253,18 @@ private fun MdvaultApp(container: AppContainer) {
         )
     }
 }
+
+private val ScreenSaver = Saver<Screen, String>(
+    save = { it.name },
+    restore = { name ->
+        Screen.values().firstOrNull { it.name == name } ?: Screen.Home
+    },
+)
+
+private val DirectoryBackStackSaver = listSaver<List<String>, String>(
+    save = { stack -> stack },
+    restore = { restored -> restored.ifEmpty { listOf("") } },
+)
 
 @Composable
 private fun LoadingScreen() {

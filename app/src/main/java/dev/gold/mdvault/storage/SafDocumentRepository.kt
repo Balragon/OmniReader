@@ -1,8 +1,11 @@
 package dev.gold.mdvault.storage
 
 import android.content.ContentResolver
+import android.database.Cursor
 import android.net.Uri
+import android.os.RemoteException
 import android.provider.DocumentsContract
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -28,21 +31,25 @@ class SafDocumentRepository(
 ) {
     suspend fun list(treeUri: Uri, parentUri: Uri = rootDocumentUri(treeUri)): List<SafDocument> =
         withContext(ioDispatcher) {
-            val parentDocumentId = DocumentsContract.getDocumentId(parentUri)
-            val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentDocumentId)
-            val documents = mutableListOf<SafDocument>()
-            contentResolver.query(childrenUri, DOCUMENT_PROJECTION, null, null, null)?.use { cursor ->
-                while (cursor.moveToNext()) {
-                    documents += cursor.toSafDocument(treeUri)
+            mapProviderFailures {
+                val parentDocumentId = DocumentsContract.getDocumentId(parentUri)
+                val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentDocumentId)
+                val documents = mutableListOf<SafDocument>()
+                queryCursor(treeUri, childrenUri, parentDocumentId).use { cursor ->
+                    while (cursor.moveToNext()) {
+                        documents += cursor.toSafDocument(treeUri)
+                    }
                 }
+                documents
             }
-            documents
         }
 
     suspend fun metadata(treeUri: Uri, documentUri: Uri): SafDocument =
         withContext(ioDispatcher) {
-            queryDocument(treeUri, documentUri)
-                ?: throw FileNotFoundException("Document not found: $documentUri")
+            mapProviderFailures {
+                queryDocument(treeUri, documentUri, documentUri.toString())
+                    ?: throw missingDocument(treeUri, documentUri.toString())
+            }
         }
 
     suspend fun findChild(treeUri: Uri, parentUri: Uri, displayName: String): SafDocument? =
@@ -51,26 +58,28 @@ class SafDocumentRepository(
     suspend fun resolve(treeUri: Uri, relativePath: String): SafDocument? =
         withContext(ioDispatcher) {
             val segments = normalizeRelativePath(relativePath)
-            if (segments.isEmpty()) {
-                return@withContext queryDocument(treeUri, rootDocumentUri(treeUri))
-            }
+            mapProviderFailures {
+                if (segments.isEmpty()) {
+                    return@mapProviderFailures queryDocument(treeUri, rootDocumentUri(treeUri), "vault root")
+                }
 
-            var current = queryDocument(treeUri, rootDocumentUri(treeUri)) ?: return@withContext null
-            for (segment in segments) {
-                val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, current.documentId)
-                var matched: SafDocument? = null
-                contentResolver.query(childrenUri, DOCUMENT_PROJECTION, null, null, null)?.use { cursor ->
-                    while (cursor.moveToNext()) {
-                        val child = cursor.toSafDocument(treeUri)
-                        if (child.displayName == segment) {
-                            matched = child
-                            return@use
+                var current = queryDocument(treeUri, rootDocumentUri(treeUri), "vault root") ?: return@mapProviderFailures null
+                for (segment in segments) {
+                    val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, current.documentId)
+                    var matched: SafDocument? = null
+                    queryCursor(treeUri, childrenUri, segment).use { cursor ->
+                        while (cursor.moveToNext()) {
+                            val child = cursor.toSafDocument(treeUri)
+                            if (child.displayName == segment) {
+                                matched = child
+                                return@use
+                            }
                         }
                     }
+                    current = matched ?: return@mapProviderFailures null
                 }
-                current = matched ?: return@withContext null
+                current
             }
-            current
         }
 
     suspend fun <T> read(
@@ -80,19 +89,21 @@ class SafDocumentRepository(
         reader: (InputStream) -> T,
     ): T =
         withContext(ioDispatcher) {
-            val document = queryDocument(treeUri, documentUri)
-                ?: throw FileNotFoundException("Document not found: $documentUri")
-            if (document.isVirtual) {
-                val mimeType = typedMimeType ?: document.mimeType.takeUnless { it.isBlank() } ?: "*/*"
-                val descriptor = contentResolver.openTypedAssetFileDescriptor(documentUri, mimeType, null)
-                    ?: throw FileNotFoundException("Unable to open virtual document: $documentUri")
-                descriptor.use { asset ->
-                    asset.createInputStream().use(reader)
+            mapProviderFailures {
+                val document = queryDocument(treeUri, documentUri, documentUri.toString())
+                    ?: throw missingDocument(treeUri, documentUri.toString())
+                if (document.isVirtual) {
+                    val mimeType = typedMimeType ?: document.mimeType.takeUnless { it.isBlank() } ?: "*/*"
+                    val descriptor = contentResolver.openTypedAssetFileDescriptor(documentUri, mimeType, null)
+                        ?: throw missingDocument(treeUri, document.displayName)
+                    descriptor.use { asset ->
+                        asset.createInputStream().use(reader)
+                    }
+                } else {
+                    val input = contentResolver.openInputStream(documentUri)
+                        ?: throw missingDocument(treeUri, document.displayName)
+                    input.use(reader)
                 }
-            } else {
-                val input = contentResolver.openInputStream(documentUri)
-                    ?: throw FileNotFoundException("Unable to open document: $documentUri")
-                input.use(reader)
             }
         }
 
@@ -102,9 +113,11 @@ class SafDocumentRepository(
         writer: (OutputStream) -> T,
     ): T =
         withContext(ioDispatcher) {
-            val output = contentResolver.openOutputStream(documentUri, mode)
-                ?: throw FileNotFoundException("Unable to open document for writing: $documentUri")
-            output.use(writer)
+            mapProviderFailures {
+                val output = contentResolver.openOutputStream(documentUri, mode)
+                    ?: throw VaultError.DocumentMissing(documentUri.toString())
+                output.use(writer)
+            }
         }
 
     suspend fun create(
@@ -114,16 +127,20 @@ class SafDocumentRepository(
         displayName: String,
     ): SafDocument =
         withContext(ioDispatcher) {
-            val uri = DocumentsContract.createDocument(contentResolver, parentUri, mimeType, displayName)
-                ?: throw FileNotFoundException("Unable to create $displayName under $parentUri")
-            queryDocument(treeUri, uri) ?: throw FileNotFoundException("Created document not found: $uri")
+            mapProviderFailures {
+                val uri = DocumentsContract.createDocument(contentResolver, parentUri, mimeType, displayName)
+                    ?: throw missingDocument(treeUri, displayName)
+                queryDocument(treeUri, uri, displayName) ?: throw missingDocument(treeUri, displayName)
+            }
         }
 
     suspend fun delete(documentUri: Uri) {
         withContext(ioDispatcher) {
-            val deleted = DocumentsContract.deleteDocument(contentResolver, documentUri)
-            if (!deleted) {
-                throw FileNotFoundException("Unable to delete document: $documentUri")
+            mapProviderFailures {
+                val deleted = DocumentsContract.deleteDocument(contentResolver, documentUri)
+                if (!deleted) {
+                    throw VaultError.DocumentMissing(documentUri.toString())
+                }
             }
         }
     }
@@ -131,14 +148,51 @@ class SafDocumentRepository(
     fun rootDocumentUri(treeUri: Uri): Uri =
         DocumentsContract.buildDocumentUriUsingTree(treeUri, DocumentsContract.getTreeDocumentId(treeUri))
 
-    private fun queryDocument(treeUri: Uri, documentUri: Uri): SafDocument? {
-        contentResolver.query(documentUri, DOCUMENT_PROJECTION, null, null, null)?.use { cursor ->
+    private fun queryDocument(treeUri: Uri, documentUri: Uri, missingName: String): SafDocument? {
+        queryCursor(treeUri, documentUri, missingName).use { cursor ->
             if (cursor.moveToFirst()) {
                 return cursor.toSafDocument(treeUri)
             }
         }
         return null
     }
+
+    private fun queryCursor(treeUri: Uri, uri: Uri, missingName: String): Cursor =
+        contentResolver.query(uri, DOCUMENT_PROJECTION, null, null, null)
+            ?: throw missingDocument(treeUri, missingName)
+
+    private fun missingDocument(treeUri: Uri, name: String): VaultError =
+        if (hasPersistedReadPermission(treeUri)) {
+            VaultError.DocumentMissing(name)
+        } else {
+            VaultError.PermissionLost()
+        }
+
+    private fun hasPersistedReadPermission(treeUri: Uri): Boolean =
+        contentResolver.persistedUriPermissions.any { permission ->
+            permission.uri == treeUri && permission.isReadPermission
+        }
+
+    private inline fun <T> mapProviderFailures(block: () -> T): T =
+        try {
+            block()
+        } catch (error: VaultError) {
+            throw error
+        } catch (error: SecurityException) {
+            throw VaultError.PermissionLost()
+        } catch (error: FileNotFoundException) {
+            throw VaultError.DocumentMissing(error.message.orEmpty())
+        } catch (error: RemoteException) {
+            throw VaultError.ProviderUnavailable()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: IllegalStateException) {
+            throw VaultError.ProviderUnavailable()
+        } catch (error: java.io.IOException) {
+            throw VaultError.Unknown(error)
+        } catch (error: RuntimeException) {
+            throw VaultError.Unknown(error)
+        }
 
     private fun android.database.Cursor.toSafDocument(treeUri: Uri): SafDocument {
         val documentId = getString(getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID))

@@ -8,9 +8,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.text.TextRange
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.withContext
+import java.io.File
 
 /**
  * Compose TextFieldState 기반 EditorPort 구현.
@@ -47,6 +51,34 @@ class ComposeEditorPort(initialText: String = "") : EditorPort {
             .drop(1) // 초기값은 기록하지 않는다
             .debounce(RECORD_DEBOUNCE_MS)
             .collect { recordPendingChange() }
+    }
+
+    /**
+     * 프로세스 종료에 대비해 큰 본문은 savedInstanceState가 아니라 cache 파일에 쓴다.
+     * 호출자는 저장 완료된 본문과 같은 경우 draft를 유지할지 결정한다.
+     */
+    @OptIn(FlowPreview::class)
+    suspend fun autosaveDraftAfterIdle(
+        draftFile: File,
+        shouldKeepDraft: (String) -> Boolean,
+        onError: (Exception) -> Unit,
+    ) {
+        snapshotFlow { textFieldState.text.toString() }
+            .drop(1) // 화면에 처음 로드한 본문을 draft로 만들지 않는다
+            .debounce(DRAFT_DEBOUNCE_MS)
+            .collect { currentText ->
+                try {
+                    if (shouldKeepDraft(currentText)) {
+                        writeDraftAtomically(draftFile, currentText)
+                    } else {
+                        deleteDraft(draftFile)
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    onError(e)
+                }
+            }
     }
 
     private fun currentSnapshot() = EditorSnapshot(
@@ -116,6 +148,26 @@ class ComposeEditorPort(initialText: String = "") : EditorPort {
         lastRecorded = snapshot
     }
 
+    private suspend fun writeDraftAtomically(draftFile: File, text: String) {
+        withContext(Dispatchers.IO) {
+            draftFile.parentFile?.mkdirs()
+            val tmp = File(draftFile.parentFile, "${draftFile.name}.tmp")
+            tmp.writeText(text, Charsets.UTF_8)
+            if (!tmp.renameTo(draftFile)) {
+                draftFile.writeText(text, Charsets.UTF_8)
+                tmp.delete()
+            }
+        }
+    }
+
+    private suspend fun deleteDraft(draftFile: File) {
+        withContext(Dispatchers.IO) {
+            if (draftFile.exists()) {
+                draftFile.delete()
+            }
+        }
+    }
+
     override val scrollPositionPx: Int
         get() = scrollState.value
 
@@ -125,6 +177,7 @@ class ComposeEditorPort(initialText: String = "") : EditorPort {
 
     private companion object {
         private const val RECORD_DEBOUNCE_MS = 350L
+        private const val DRAFT_DEBOUNCE_MS = 1500L
         private const val UNDO_CAPACITY = 100
     }
 }

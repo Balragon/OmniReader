@@ -3,10 +3,12 @@ package dev.gold.mdvault.storage
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.RemoteException
 import android.provider.DocumentsContract
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -39,7 +41,19 @@ class VaultRepository(
         require(persistableFlags != 0) { "Vault URI needs at least read or write permission" }
 
         val previous = currentVaultTreeUri()
-        context.contentResolver.takePersistableUriPermission(treeUri, persistableFlags)
+        try {
+            context.contentResolver.takePersistableUriPermission(treeUri, persistableFlags)
+        } catch (error: SecurityException) {
+            throw VaultError.PermissionLost()
+        } catch (error: RemoteException) {
+            throw VaultError.ProviderUnavailable()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: IllegalStateException) {
+            throw VaultError.ProviderUnavailable()
+        } catch (error: RuntimeException) {
+            throw VaultError.Unknown(error)
+        }
         if (previous != null && previous != treeUri) {
             releasePersistedPermission(previous)
         }
@@ -58,10 +72,11 @@ class VaultRepository(
 
     suspend fun list(relativeDirectory: String = ""): List<SafDocument> {
         val treeUri = requireVaultTreeUri()
-        val directory = safRepository.resolve(treeUri, relativeDirectory)
-            ?: throw IllegalArgumentException("Vault directory not found: $relativeDirectory")
+        val directory = resolveVaultPath(treeUri, relativeDirectory.ifBlank { "vault root" }, relativeDirectory)
         require(directory.isDirectory) { "Vault path is not a directory: $relativeDirectory" }
-        return safRepository.list(treeUri, directory.uri)
+        return mapVaultFailures(treeUri, relativeDirectory.ifBlank { "vault root" }) {
+            safRepository.list(treeUri, directory.uri)
+        }
     }
 
     suspend fun create(
@@ -71,13 +86,16 @@ class VaultRepository(
     ): SafDocument {
         val treeUri = requireVaultTreeUri()
         val path = VaultRelativePath.parse(relativePath)
-        val parent = safRepository.resolve(treeUri, path.parentPath)
-            ?: throw IllegalArgumentException("Parent directory not found: ${path.parentPath}")
+        val parent = resolveVaultPath(treeUri, path.parentPath.ifBlank { "vault root" }, path.parentPath)
         require(parent.isDirectory) { "Parent path is not a directory: ${path.parentPath}" }
 
-        val document = safRepository.create(treeUri, parent.uri, mimeType, path.fileName)
+        val document = mapVaultFailures(treeUri, path.fileName) {
+            safRepository.create(treeUri, parent.uri, mimeType, path.fileName)
+        }
         if (writer != null) {
-            safRepository.write(document.uri, writer = writer)
+            mapVaultFailures(treeUri, path.fileName) {
+                safRepository.write(document.uri, writer = writer)
+            }
         }
         recordRecentDocument(path.value)
         return document
@@ -94,10 +112,11 @@ class VaultRepository(
     ): T {
         val treeUri = requireVaultTreeUri()
         val path = VaultRelativePath.parse(relativePath)
-        val document = safRepository.resolve(treeUri, path.value)
-            ?: throw IllegalArgumentException("Vault document not found: ${path.value}")
+        val document = resolveVaultPath(treeUri, path.fileName, path.value)
         require(!document.isDirectory) { "Vault path is a directory: ${path.value}" }
-        return safRepository.read(treeUri, document.uri, document.mimeType, reader).also {
+        return mapVaultFailures(treeUri, path.fileName) {
+            safRepository.read(treeUri, document.uri, document.mimeType, reader)
+        }.also {
             if (trackRecent) recordRecentDocument(path.value)
         }
     }
@@ -105,10 +124,11 @@ class VaultRepository(
     suspend fun <T> write(relativePath: String, writer: (OutputStream) -> T): T {
         val treeUri = requireVaultTreeUri()
         val path = VaultRelativePath.parse(relativePath)
-        val document = safRepository.resolve(treeUri, path.value)
-            ?: throw IllegalArgumentException("Vault document not found: ${path.value}")
+        val document = resolveVaultPath(treeUri, path.fileName, path.value)
         require(!document.isDirectory) { "Vault path is a directory: ${path.value}" }
-        return safRepository.write(document.uri, writer = writer).also {
+        return mapVaultFailures(treeUri, path.fileName) {
+            safRepository.write(document.uri, writer = writer)
+        }.also {
             recordRecentDocument(path.value)
         }
     }
@@ -116,10 +136,11 @@ class VaultRepository(
     suspend fun delete(relativePath: String) {
         val treeUri = requireVaultTreeUri()
         val path = VaultRelativePath.parse(relativePath)
-        val document = safRepository.resolve(treeUri, path.value)
-            ?: throw IllegalArgumentException("Vault document not found: ${path.value}")
+        val document = resolveVaultPath(treeUri, path.fileName, path.value)
         require(!document.isDirectory) { "Vault path is a directory: ${path.value}" }
-        safRepository.delete(document.uri)
+        mapVaultFailures(treeUri, path.fileName) {
+            safRepository.delete(document.uri)
+        }
         removeRecentDocument(path.value)
     }
 
@@ -143,6 +164,44 @@ class VaultRepository(
 
     private suspend fun requireVaultTreeUri(): Uri =
         currentVaultTreeUri() ?: throw IllegalStateException("Vault tree URI is not configured")
+
+    private suspend fun resolveVaultPath(treeUri: Uri, missingName: String, relativePath: String): SafDocument =
+        mapVaultFailures(treeUri, missingName) {
+            safRepository.resolve(treeUri, relativePath) ?: throw missingVaultDocument(treeUri, missingName)
+        }
+
+    private fun missingVaultDocument(treeUri: Uri, name: String): VaultError =
+        if (hasPersistedReadPermission(treeUri)) {
+            VaultError.DocumentMissing(name)
+        } else {
+            VaultError.PermissionLost()
+        }
+
+    private fun hasPersistedReadPermission(treeUri: Uri): Boolean =
+        context.contentResolver.persistedUriPermissions.any { permission ->
+            permission.uri == treeUri && permission.isReadPermission
+        }
+
+    private inline fun <T> mapVaultFailures(treeUri: Uri, missingName: String, block: () -> T): T =
+        try {
+            block()
+        } catch (error: VaultError) {
+            throw error
+        } catch (error: SecurityException) {
+            throw VaultError.PermissionLost()
+        } catch (error: RemoteException) {
+            throw VaultError.ProviderUnavailable()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: IllegalStateException) {
+            throw VaultError.ProviderUnavailable()
+        } catch (error: java.io.FileNotFoundException) {
+            throw missingVaultDocument(treeUri, missingName)
+        } catch (error: java.io.IOException) {
+            throw VaultError.Unknown(error)
+        } catch (error: RuntimeException) {
+            throw VaultError.Unknown(error)
+        }
 
     private fun releasePersistedPermission(treeUri: Uri) {
         val persistedPermission = context.contentResolver.persistedUriPermissions

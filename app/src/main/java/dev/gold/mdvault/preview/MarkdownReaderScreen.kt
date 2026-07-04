@@ -3,6 +3,7 @@ package dev.gold.mdvault.preview
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.util.Log
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
@@ -30,7 +31,14 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.runtime.rememberCoroutineScope
 import dev.gold.mdvault.document.VaultDocxExporter
 import dev.gold.mdvault.markdown.MarkdownEngine
+import dev.gold.mdvault.storage.BoundedTextRead
+import dev.gold.mdvault.storage.VaultError
 import dev.gold.mdvault.storage.VaultRepository
+import dev.gold.mdvault.storage.readTextBounded
+import dev.gold.mdvault.storage.vaultDocumentSize
+import dev.gold.mdvault.ui.VaultErrorRecoveryButton
+import dev.gold.mdvault.ui.VaultErrorUi
+import dev.gold.mdvault.ui.toVaultErrorUi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -54,27 +62,33 @@ fun MarkdownReaderScreen(
     onEdit: () -> Unit,
     onBack: () -> Unit,
     onOpenNote: (String) -> Unit,
+    onOpenVaultSetup: (() -> Unit)? = null,
 ) {
     var html by remember(relativePath) { mutableStateOf<String?>(null) }
-    var error by remember(relativePath) { mutableStateOf<String?>(null) }
+    var error by remember(relativePath) { mutableStateOf<VaultErrorUi?>(null) }
     var notice by remember(relativePath) { mutableStateOf<String?>(null) }
+    var noticeRecovery by remember(relativePath) { mutableStateOf<VaultErrorUi?>(null) }
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(relativePath) {
         withContext(Dispatchers.IO) {
+            error = null
+            noticeRecovery = null
             try {
-                val markdown = vaultRepository.read(relativePath) { input ->
-                    input.readBytes().decodeToString()
-                }
-                html = if (markdown.isBlank()) {
+                val markdown = vaultRepository.readMarkdownPreview(relativePath)
+                notice = markdown.truncationNotice()
+                html = if (markdown.text.isBlank()) {
                     PreviewHtmlBuilder.build(
                         "<p style=\"opacity:0.6\">빈 문서입니다 — 오른쪽 위 \"편집\"을 눌러 작성하세요.</p>",
                     )
                 } else {
-                    PreviewHtmlBuilder.build(markdownEngine.toHtml(markdown))
+                    PreviewHtmlBuilder.build(markdownEngine.toHtml(markdown.text))
                 }
+            } catch (e: VaultError) {
+                Log.w(TAG, "Failed to read markdown preview", e)
+                error = e.toVaultErrorUi()
             } catch (e: Exception) {
-                error = e.message ?: e.javaClass.simpleName
+                error = VaultErrorUi(e.message ?: e.javaClass.simpleName)
             }
         }
     }
@@ -93,10 +107,16 @@ fun MarkdownReaderScreen(
             )
             TextButton(onClick = {
                 notice = "DOCX 내보내는 중…"
+                noticeRecovery = null
                 scope.launch(Dispatchers.IO) {
                     notice = try {
                         val result = docxExporter.export(relativePath)
                         "내보내기 완료: ${result.relativePath} (경고 ${result.warningCount}건)"
+                    } catch (e: VaultError) {
+                        Log.w(TAG, "Failed to export DOCX", e)
+                        val uiError = e.toVaultErrorUi()
+                        noticeRecovery = uiError
+                        "내보내기 실패: ${uiError.message}"
                     } catch (e: Exception) {
                         "내보내기 실패: ${e.message ?: e.javaClass.simpleName}"
                     }
@@ -105,17 +125,29 @@ fun MarkdownReaderScreen(
             TextButton(onClick = onEdit) { Text("편집") }
         }
         notice?.let {
-            Text(
-                text = it,
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
-            )
+            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)) {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                noticeRecovery?.let { uiError ->
+                    VaultErrorRecoveryButton(
+                        error = uiError,
+                        onOpenVaultSetup = onOpenVaultSetup,
+                        onBackToList = onBack,
+                    )
+                }
+            }
         }
         when {
-            error != null -> Text(
-                text = "문서를 열 수 없습니다: $error",
-                modifier = Modifier.padding(24.dp),
-            )
+            error != null -> Column(modifier = Modifier.padding(24.dp)) {
+                Text(text = "문서를 열 수 없습니다: ${error!!.message}")
+                VaultErrorRecoveryButton(
+                    error = error!!,
+                    onOpenVaultSetup = onOpenVaultSetup,
+                    onBackToList = onBack,
+                )
+            }
             html == null -> Text(text = "여는 중…", modifier = Modifier.padding(24.dp))
             else -> VaultWebView(
                 html = html!!,
@@ -126,6 +158,16 @@ fun MarkdownReaderScreen(
         }
     }
 }
+
+private suspend fun VaultRepository.readMarkdownPreview(relativePath: String): BoundedTextRead {
+    val size = vaultDocumentSize(relativePath)
+    return read(relativePath) { input ->
+        input.readTextBounded(TEXT_PREVIEW_MAX_BYTES, size)
+    }
+}
+
+private fun BoundedTextRead.truncationNotice(): String? =
+    if (truncated) LARGE_TEXT_NOTICE else null
 
 @Composable
 private fun VaultWebView(
@@ -171,6 +213,10 @@ internal fun vaultBaseUrl(baseDirectory: String): String {
     val url = builder.build().toString()
     return if (url.endsWith("/")) url else "$url/"
 }
+
+private const val TEXT_PREVIEW_MAX_BYTES = 4 * 1024 * 1024
+private const val LARGE_TEXT_NOTICE = "파일이 너무 커서 앞부분만 표시합니다"
+private const val TAG = "MarkdownReaderScreen"
 
 /**
  * 문서 WebView 공통 클라이언트. vault.local 요청은 loadAsset으로 해석

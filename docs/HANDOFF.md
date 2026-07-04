@@ -21,6 +21,19 @@
 > - 보류: <하다 만 것, 알게 됐지만 안 고친 것 — 없으면 생략>
 > ```
 
+### 2026-07-04 Claude+Codex (P0 하드닝, wf_2d4a028fa43b)
+- 요지: 출시 검토 P0 3건 — ①rememberSaveable+에디터 draft 자동보관/복원
+  ②대용량 게이트(텍스트 4MB 부분표시·에디터 2MB 거부·이미지 다운샘플·DOCX
+  50MB)+한국어 안내 ③VaultError 모델링(권한소실/파일없음/제공자오류 →
+  한국어 복구 CTA, raw exception 노출 제거)
+- 검증: gradlew test assembleRelease + 에디터 instrumentation 5개 + 에뮬레이터
+  실동작(회전 후 reader 유지, 프로세스 kill 후 draft 복원 프롬프트→내용 일치,
+  14MB md 부분표시 안내, FATAL 0)
+- ⚠️ VaultRepository/SafDocumentRepository가 VaultError를 던지도록 변경
+  (Exception 하위라 기존 호출부 호환). 에디터에 draft 파일 경로 규약 추가:
+  cacheDir/drafts/<sha12-of-path>.md
+- 보류: VaultError 중 PermissionLost 실기 재현 테스트는 미실시 (코드 경로만)
+
 ### 2026-07-04 Claude+Codex (미디어 크롬 토글 + 출시 검토, wf_7234c6a5baf6)
 - 요지: 갤러리식 몰입 토글(탭→상단바+상태바+내비바 동시 표시/숨김, 콘텐츠
   edge-to-edge) Codex 구현 + 3렌즈 출시 검토(발견 다수 → P0/P1/P2 보고서)

@@ -4,6 +4,7 @@ import android.content.ContentResolver
 import android.net.Uri
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
+import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -41,7 +43,9 @@ import dev.gold.mdvault.document.DocumentKind
 import dev.gold.mdvault.document.DocumentTypeDetector
 import dev.gold.mdvault.document.DocxToMarkdownImporter
 import dev.gold.mdvault.storage.SafDocument
+import dev.gold.mdvault.storage.VaultError
 import dev.gold.mdvault.storage.VaultRepository
+import dev.gold.mdvault.storage.openableSize
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -67,10 +71,12 @@ fun FileListScreen(
     val scope = rememberCoroutineScope()
     var refreshKey by remember { mutableIntStateOf(0) }
     var entries by remember(currentDirectory, refreshKey) { mutableStateOf<List<SafDocument>?>(null) }
-    var error by remember(currentDirectory, refreshKey) { mutableStateOf<String?>(null) }
+    var error by remember(currentDirectory, refreshKey) { mutableStateOf<VaultErrorUi?>(null) }
     var status by remember { mutableStateOf<String?>(null) }
+    var statusRecovery by remember { mutableStateOf<VaultErrorUi?>(null) }
     var pendingDelete by remember { mutableStateOf<DeleteTarget?>(null) }
     var isDeleting by remember { mutableStateOf(false) }
+    val listState = rememberLazyListState()
 
     fun refresh() {
         refreshKey += 1
@@ -79,6 +85,7 @@ fun FileListScreen(
     fun createNote() {
         scope.launch {
             status = "새 노트 생성 중..."
+            statusRecovery = null
             try {
                 val path = withContext(Dispatchers.IO) {
                     val existingNames = vaultRepository.list(currentDirectory)
@@ -92,11 +99,18 @@ fun FileListScreen(
                     newPath
                 }
                 status = null
+                statusRecovery = null
                 refresh()
                 // 새 노트는 빈 문서 — 읽기 화면(검정 화면)이 아니라 바로 편집기로
                 onEditFile(path)
+            } catch (e: VaultError) {
+                Log.w(TAG, "Failed to create note", e)
+                val uiError = e.toVaultErrorUi()
+                status = "새 노트 생성 실패: ${uiError.message}"
+                statusRecovery = uiError
             } catch (e: Exception) {
                 status = "새 노트 생성 실패: ${e.userMessage()}"
+                statusRecovery = null
             }
         }
     }
@@ -105,15 +119,23 @@ fun FileListScreen(
         scope.launch {
             isDeleting = true
             status = "삭제 중..."
+            statusRecovery = null
             try {
                 withContext(Dispatchers.IO) {
                     vaultRepository.delete(target.path)
                 }
                 pendingDelete = null
                 status = "삭제했습니다: ${target.displayName}"
+                statusRecovery = null
                 refresh()
+            } catch (e: VaultError) {
+                Log.w(TAG, "Failed to delete note", e)
+                val uiError = e.toVaultErrorUi()
+                status = "삭제 실패: ${uiError.message}"
+                statusRecovery = uiError
             } catch (e: Exception) {
                 status = "삭제 실패: ${e.userMessage()}"
+                statusRecovery = null
             } finally {
                 isDeleting = false
             }
@@ -124,6 +146,7 @@ fun FileListScreen(
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch {
             status = "DOCX 가져오는 중..."
+            statusRecovery = null
             try {
                 val result = withContext(Dispatchers.IO) {
                     importDocxIntoVault(
@@ -135,9 +158,16 @@ fun FileListScreen(
                     )
                 }
                 status = "가져오기 완료: ${result.markdownPath} (경고 ${result.warningCount}건)"
+                statusRecovery = null
                 refresh()
+            } catch (e: VaultError) {
+                Log.w(TAG, "Failed to import DOCX into vault", e)
+                val uiError = e.toVaultErrorUi()
+                status = "DOCX 가져오기 실패: ${uiError.message}"
+                statusRecovery = uiError
             } catch (e: Exception) {
                 status = "DOCX 가져오기 실패: ${e.userMessage()}"
+                statusRecovery = null
             }
         }
     }
@@ -154,8 +184,11 @@ fun FileListScreen(
                             .thenBy { it.displayName.lowercase() },
                     )
             }
+        } catch (e: VaultError) {
+            Log.w(TAG, "Failed to list vault directory", e)
+            error = e.toVaultErrorUi()
         } catch (e: Exception) {
-            error = e.userMessage()
+            error = VaultErrorUi(e.userMessage())
         }
     }
 
@@ -229,6 +262,7 @@ fun FileListScreen(
         },
     ) { contentPadding ->
         LazyColumn(
+            state = listState,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(contentPadding),
@@ -237,18 +271,34 @@ fun FileListScreen(
         ) {
             status?.let { message ->
                 item {
-                    Text(
-                        text = message,
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
+                    Column {
+                        Text(
+                            text = message,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        statusRecovery?.let { uiError ->
+                            VaultErrorRecoveryButton(
+                                error = uiError,
+                                onOpenVaultSetup = onOpenVaultSetup,
+                                onBackToList = if (canNavigateUp) onNavigateUp else null,
+                            )
+                        }
+                    }
                 }
             }
             when {
                 error != null -> item {
-                    Text(
-                        text = "목록을 불러오지 못했습니다: $error",
-                        style = MaterialTheme.typography.bodyLarge,
-                    )
+                    Column {
+                        Text(
+                            text = "목록을 불러오지 못했습니다: ${error!!.message}",
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                        VaultErrorRecoveryButton(
+                            error = error!!,
+                            onOpenVaultSetup = onOpenVaultSetup,
+                            onBackToList = if (canNavigateUp) onNavigateUp else null,
+                        )
+                    }
                 }
                 entries == null -> item {
                     Text(
@@ -376,6 +426,10 @@ private suspend fun importDocxIntoVault(
     docxToMarkdownImporter: DocxToMarkdownImporter,
 ): ImportResult {
     val displayName = contentResolver.displayName(sourceUri)
+    val size = contentResolver.openableSize(sourceUri)
+    if (size != null && size > DOCX_IMPORT_MAX_BYTES) {
+        throw IllegalArgumentException("DOCX 파일이 너무 커서 변환할 수 없습니다 (50MB 초과)")
+    }
     val markdownName = "${displayName.docxBaseName().sanitizeVaultFileName()}.md"
     val mediaDirectory = ensureMediaDirectory(vaultRepository, currentDirectory)
     val input = contentResolver.openInputStream(sourceUri)
@@ -486,8 +540,14 @@ internal fun joinVaultPath(parent: String, child: String): String =
         .joinToString("/")
 
 private fun Exception.userMessage(): String =
-    message ?: javaClass.simpleName
+    if (this is VaultError) {
+        toVaultErrorUi().message
+    } else {
+        message ?: javaClass.simpleName
+    }
 
+private const val TAG = "FileListScreen"
 private const val MEDIA_DIRECTORY_NAME = "media"
 private const val MARKDOWN_MIME_TYPE = "text/markdown"
 private const val BINARY_MIME_TYPE = "application/octet-stream"
+private const val DOCX_IMPORT_MAX_BYTES = 50L * 1024L * 1024L

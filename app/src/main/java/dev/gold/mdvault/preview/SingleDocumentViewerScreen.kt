@@ -1,13 +1,16 @@
 package dev.gold.mdvault.preview
 
 import android.app.Activity
-import android.content.Context
 import android.content.ContentResolver
+import android.content.Context
 import android.content.ContextWrapper
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color as AndroidColor
 import android.net.Uri
+import android.os.RemoteException
 import android.provider.OpenableColumns
+import android.util.Log
 import android.webkit.WebView
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -23,6 +26,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -50,6 +54,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -60,13 +65,21 @@ import dev.gold.mdvault.document.DocumentKind
 import dev.gold.mdvault.document.DocumentTypeDetector
 import dev.gold.mdvault.document.DocxToMarkdownImporter
 import dev.gold.mdvault.markdown.MarkdownEngine
+import dev.gold.mdvault.storage.BoundedTextRead
 import dev.gold.mdvault.storage.RecentFilesRepository
+import dev.gold.mdvault.storage.VaultError
+import dev.gold.mdvault.storage.openableSize
+import dev.gold.mdvault.storage.readTextBounded
+import dev.gold.mdvault.ui.VaultErrorRecoveryButton
+import dev.gold.mdvault.ui.VaultErrorUi
+import dev.gold.mdvault.ui.toVaultErrorUi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileNotFoundException
 import java.security.MessageDigest
+import kotlin.math.roundToInt
 
 /**
  * 단일 파일 뷰어 — 앱의 핵심 동선. "내 파일" 등에서 md/txt/docx/html/pdf/이미지를
@@ -85,6 +98,7 @@ fun SingleDocumentViewerScreen(
     docxImporter: DocxToMarkdownImporter,
     recentFiles: RecentFilesRepository,
     onBack: () -> Unit,
+    onOpenVaultSetup: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -100,10 +114,26 @@ fun SingleDocumentViewerScreen(
                 displayName = name
                 val kind = DocumentTypeDetector.detect(name, resolver.getType(uri))
                 val loaded = loadDocument(kind, name, uri, resolver, markdownEngine, docxImporter, context.cacheDir)
+                notice = loaded.notice
                 runCatching { recentFiles.record(uri, name, kind.name) }
-                loaded
+                loaded.state
+            } catch (e: VaultError) {
+                Log.w(TAG, "Failed to open document", e)
+                ViewerState.Error(e.toVaultErrorUi())
+            } catch (e: SecurityException) {
+                Log.w(TAG, "Permission lost while opening document", e)
+                ViewerState.Error(VaultError.PermissionLost().toVaultErrorUi())
+            } catch (e: FileNotFoundException) {
+                Log.w(TAG, "Document missing while opening document", e)
+                ViewerState.Error(VaultError.DocumentMissing(displayName).toVaultErrorUi())
+            } catch (e: RemoteException) {
+                Log.w(TAG, "Provider unavailable while opening document", e)
+                ViewerState.Error(VaultError.ProviderUnavailable().toVaultErrorUi())
+            } catch (e: IllegalStateException) {
+                Log.w(TAG, "Provider unavailable while opening document", e)
+                ViewerState.Error(VaultError.ProviderUnavailable().toVaultErrorUi())
             } catch (e: Exception) {
-                ViewerState.Error(e.message ?: e.javaClass.simpleName)
+                ViewerState.Error(VaultErrorUi(e.message ?: e.javaClass.simpleName))
             }
         }
     }
@@ -111,13 +141,23 @@ fun SingleDocumentViewerScreen(
     val currentState = state
     if (currentState is ViewerState.Image) {
         MediaViewerScaffold(displayName = displayName, onBack = onBack) {
-            FullscreenImageContent(uri = currentState.uri, displayName = displayName)
+            FullscreenImageContent(
+                uri = currentState.uri,
+                displayName = displayName,
+                onBack = onBack,
+                onOpenVaultSetup = onOpenVaultSetup,
+            )
         }
         return
     }
     if (currentState is ViewerState.Pdf) {
         MediaViewerScaffold(displayName = displayName, onBack = onBack) {
-            PdfPagesView(uri, modifier = Modifier.fillMaxSize())
+            PdfPagesView(
+                uri = uri,
+                modifier = Modifier.fillMaxSize(),
+                onBack = onBack,
+                onOpenVaultSetup = onOpenVaultSetup,
+            )
         }
         return
     }
@@ -166,10 +206,14 @@ fun SingleDocumentViewerScreen(
         }
         when (currentState) {
             ViewerState.Loading -> Text("여는 중…", modifier = Modifier.padding(24.dp))
-            is ViewerState.Error -> Text(
-                text = "문서를 열 수 없습니다: ${currentState.message}",
-                modifier = Modifier.padding(24.dp),
-            )
+            is ViewerState.Error -> Column(modifier = Modifier.padding(24.dp)) {
+                Text(text = "문서를 열 수 없습니다: ${currentState.error.message}")
+                VaultErrorRecoveryButton(
+                    error = currentState.error,
+                    onOpenVaultSetup = onOpenVaultSetup,
+                    onBackToList = onBack,
+                )
+            }
             is ViewerState.Image -> Unit
             is ViewerState.Pdf -> Unit
             is ViewerState.Web -> DocumentWebViewer(
@@ -287,10 +331,13 @@ private fun MediaViewerScaffold(
 private fun FullscreenImageContent(
     uri: Uri,
     displayName: String,
+    onBack: () -> Unit,
+    onOpenVaultSetup: (() -> Unit)?,
 ) {
     val context = LocalContext.current
+    val density = LocalDensity.current
     var image by remember(uri) { mutableStateOf<ImageBitmap?>(null) }
-    var error by remember(uri) { mutableStateOf<String?>(null) }
+    var error by remember(uri) { mutableStateOf<VaultErrorUi?>(null) }
     var scale by remember(uri) { mutableStateOf(1f) }
     var offsetX by remember(uri) { mutableStateOf(0f) }
     var offsetY by remember(uri) { mutableStateOf(0f) }
@@ -306,35 +353,59 @@ private fun FullscreenImageContent(
         scale = nextScale
     }
 
-    LaunchedEffect(uri) {
-        image = null
-        error = null
-        try {
-            image = withContext(Dispatchers.IO) {
-                val bitmap = context.contentResolver.openInputStream(uri)?.use { input ->
-                    BitmapFactory.decodeStream(input)
-                } ?: throw FileNotFoundException("$uri")
-                bitmap.asImageBitmap()
-            }
-        } catch (e: Exception) {
-            error = e.message ?: e.javaClass.simpleName
-        }
-    }
-
-    Box(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
             .transformable(transformableState),
     ) {
+        val targetWidthPx = with(density) { maxWidth.toPx().roundToInt() }
+            .coerceAtLeast(1) * IMAGE_SCREEN_MULTIPLIER
+        val targetHeightPx = with(density) { maxHeight.toPx().roundToInt() }
+            .coerceAtLeast(1) * IMAGE_SCREEN_MULTIPLIER
+
+        LaunchedEffect(uri, targetWidthPx, targetHeightPx) {
+            image = null
+            error = null
+            try {
+                image = withContext(Dispatchers.IO) {
+                    decodeSampledBitmap(context.contentResolver, uri, targetWidthPx, targetHeightPx)
+                        .asImageBitmap()
+                }
+            } catch (e: SecurityException) {
+                Log.w(TAG, "Permission lost while opening image", e)
+                error = VaultError.PermissionLost().toVaultErrorUi()
+            } catch (e: FileNotFoundException) {
+                Log.w(TAG, "Image document missing", e)
+                error = VaultError.DocumentMissing(displayName).toVaultErrorUi()
+            } catch (e: RemoteException) {
+                Log.w(TAG, "Provider unavailable while opening image", e)
+                error = VaultError.ProviderUnavailable().toVaultErrorUi()
+            } catch (e: IllegalStateException) {
+                Log.w(TAG, "Provider unavailable while opening image", e)
+                error = VaultError.ProviderUnavailable().toVaultErrorUi()
+            } catch (e: Exception) {
+                error = VaultErrorUi(e.message ?: e.javaClass.simpleName)
+            }
+        }
+
         when {
-            error != null -> Text(
-                text = "이미지를 열 수 없습니다: $error",
-                color = Color.White,
+            error != null -> Column(
                 modifier = Modifier
                     .align(Alignment.Center)
                     .padding(24.dp),
-            )
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    text = "이미지를 열 수 없습니다: ${error!!.message}",
+                    color = Color.White,
+                )
+                VaultErrorRecoveryButton(
+                    error = error!!,
+                    onOpenVaultSetup = onOpenVaultSetup,
+                    onBackToList = onBack,
+                )
+            }
             image == null -> Text(
                 text = "여는 중…",
                 color = Color.White,
@@ -394,7 +465,7 @@ private fun DocumentWebViewer(
 
 private sealed interface ViewerState {
     data object Loading : ViewerState
-    data class Error(val message: String) : ViewerState
+    data class Error(val error: VaultErrorUi) : ViewerState
     data class Image(val uri: Uri) : ViewerState
     data object Pdf : ViewerState
     data class Web(
@@ -405,6 +476,11 @@ private sealed interface ViewerState {
     ) : ViewerState
 }
 
+private data class LoadedViewerDocument(
+    val state: ViewerState,
+    val notice: String? = null,
+)
+
 private fun loadDocument(
     kind: DocumentKind,
     displayName: String,
@@ -413,54 +489,73 @@ private fun loadDocument(
     markdownEngine: MarkdownEngine,
     docxImporter: DocxToMarkdownImporter,
     cacheDir: File,
-): ViewerState = when (kind) {
-    DocumentKind.PDF -> ViewerState.Pdf
+): LoadedViewerDocument = when (kind) {
+    DocumentKind.PDF -> LoadedViewerDocument(ViewerState.Pdf)
 
     DocumentKind.MARKDOWN -> {
-        val markdown = resolver.readText(uri)
+        val markdown = resolver.readTextPreview(uri)
         // 단일 문서 권한이라 옆의 상대경로 이미지는 접근 불가 — placeholder로 남는다
-        ViewerState.Web(PreviewHtmlBuilder.build(markdownEngine.toHtml(markdown)), { null })
+        LoadedViewerDocument(
+            state = ViewerState.Web(PreviewHtmlBuilder.build(markdownEngine.toHtml(markdown.text)), { null }),
+            notice = markdown.truncationNotice(),
+        )
     }
 
     DocumentKind.PLAIN_TEXT -> {
-        val text = resolver.readText(uri)
-        ViewerState.Web(PreviewHtmlBuilder.build("<pre>${text.escapeHtml()}</pre>"), { null })
+        val text = resolver.readTextPreview(uri)
+        LoadedViewerDocument(
+            state = ViewerState.Web(PreviewHtmlBuilder.build("<pre>${text.text.escapeHtml()}</pre>"), { null }),
+            notice = text.truncationNotice(),
+        )
     }
 
     DocumentKind.HTML -> {
         // JS 비활성 + 네트워크 차단 상태로 원본 그대로 표시 (스타일 보존)
-        ViewerState.Web(resolver.readText(uri), { null })
-    }
-
-    DocumentKind.IMAGE -> {
-        ViewerState.Image(uri)
-    }
-
-    DocumentKind.DOCX -> {
-        val digest = MessageDigest.getInstance("SHA-256")
-            .digest(uri.toString().toByteArray())
-            .joinToString("") { "%02x".format(it) }
-            .take(12)
-        val assetRoot = File(cacheDir, "opened/$digest").apply { mkdirs() }
-        val input = resolver.openInputStream(uri) ?: throw FileNotFoundException("$uri")
-        val imported = input.use { stream ->
-            docxImporter.import(stream) { relativePath, _, bytes ->
-                val target = File(assetRoot, relativePath)
-                target.parentFile?.mkdirs()
-                target.writeBytes(bytes)
-            }
-        }
-        ViewerState.Web(
-            html = PreviewHtmlBuilder.build(markdownEngine.toHtml(imported.markdown)),
-            loadAsset = { relativePath ->
-                File(assetRoot, relativePath).takeIf { it.isFile }?.readBytes()
-            },
-            savableMarkdown = imported.markdown,
+        val html = resolver.readTextPreview(uri)
+        LoadedViewerDocument(
+            state = ViewerState.Web(html.text, { null }),
+            notice = html.truncationNotice(),
         )
     }
 
+    DocumentKind.IMAGE -> {
+        LoadedViewerDocument(ViewerState.Image(uri))
+    }
+
+    DocumentKind.DOCX -> {
+        val size = resolver.openableSize(uri)
+        if (size != null && size > DOCX_IMPORT_MAX_BYTES) {
+            LoadedViewerDocument(
+                ViewerState.Error(VaultErrorUi("DOCX 파일이 너무 커서 변환할 수 없습니다 (50MB 초과)")),
+            )
+        } else {
+            val digest = MessageDigest.getInstance("SHA-256")
+                .digest(uri.toString().toByteArray())
+                .joinToString("") { "%02x".format(it) }
+                .take(12)
+            val assetRoot = File(cacheDir, "opened/$digest").apply { mkdirs() }
+            val input = resolver.openInputStream(uri) ?: throw FileNotFoundException("$uri")
+            val imported = input.use { stream ->
+                docxImporter.import(stream) { relativePath, _, bytes ->
+                    val target = File(assetRoot, relativePath)
+                    target.parentFile?.mkdirs()
+                    target.writeBytes(bytes)
+                }
+            }
+            LoadedViewerDocument(
+                ViewerState.Web(
+                    html = PreviewHtmlBuilder.build(markdownEngine.toHtml(imported.markdown)),
+                    loadAsset = { relativePath ->
+                        File(assetRoot, relativePath).takeIf { it.isFile }?.readBytes()
+                    },
+                    savableMarkdown = imported.markdown,
+                ),
+            )
+        }
+    }
+
     DocumentKind.UNSUPPORTED ->
-        ViewerState.Error("지원하지 않는 형식입니다: $displayName")
+        LoadedViewerDocument(ViewerState.Error(VaultErrorUi("지원하지 않는 형식입니다: $displayName")))
 }
 
 private fun ContentResolver.displayNameOf(uri: Uri): String? {
@@ -473,9 +568,48 @@ private fun ContentResolver.displayNameOf(uri: Uri): String? {
     return null
 }
 
-private fun ContentResolver.readText(uri: Uri): String =
-    openInputStream(uri)?.use { it.readBytes().decodeToString() }
+private fun ContentResolver.readTextPreview(uri: Uri): BoundedTextRead =
+    openInputStream(uri)?.use { it.readTextBounded(TEXT_PREVIEW_MAX_BYTES, openableSize(uri)) }
         ?: throw FileNotFoundException("$uri")
+
+private fun BoundedTextRead.truncationNotice(): String? =
+    if (truncated) LARGE_TEXT_NOTICE else null
+
+private fun decodeSampledBitmap(
+    resolver: ContentResolver,
+    uri: Uri,
+    targetWidthPx: Int,
+    targetHeightPx: Int,
+): Bitmap {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    resolver.openInputStream(uri)?.use { input ->
+        BitmapFactory.decodeStream(input, null, bounds)
+    } ?: throw FileNotFoundException("$uri")
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+        throw IllegalArgumentException("이미지 정보를 읽을 수 없습니다")
+    }
+
+    val options = BitmapFactory.Options().apply {
+        inSampleSize = calculateInSampleSize(bounds.outWidth, bounds.outHeight, targetWidthPx, targetHeightPx)
+        inPreferredConfig = Bitmap.Config.ARGB_8888
+    }
+    return resolver.openInputStream(uri)?.use { input ->
+        BitmapFactory.decodeStream(input, null, options)
+    } ?: throw IllegalArgumentException("이미지를 디코딩할 수 없습니다")
+}
+
+private fun calculateInSampleSize(
+    width: Int,
+    height: Int,
+    targetWidth: Int,
+    targetHeight: Int,
+): Int {
+    var sampleSize = 1
+    while (width / sampleSize > targetWidth || height / sampleSize > targetHeight) {
+        sampleSize *= 2
+    }
+    return sampleSize
+}
 
 private fun String.escapeHtml(): String =
     replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
@@ -485,3 +619,9 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
     is ContextWrapper -> baseContext.findActivity()
     else -> null
 }
+
+private const val TEXT_PREVIEW_MAX_BYTES = 4 * 1024 * 1024
+private const val DOCX_IMPORT_MAX_BYTES = 50L * 1024L * 1024L
+private const val IMAGE_SCREEN_MULTIPLIER = 2
+private const val LARGE_TEXT_NOTICE = "파일이 너무 커서 앞부분만 표시합니다"
+private const val TAG = "SingleDocumentViewer"

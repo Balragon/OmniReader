@@ -6,15 +6,18 @@ import android.graphics.Color
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.os.ParcelFileDescriptor
+import android.os.RemoteException
+import android.util.Log
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -34,11 +37,16 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import dev.gold.mdvault.storage.VaultError
+import dev.gold.mdvault.ui.VaultErrorRecoveryButton
+import dev.gold.mdvault.ui.VaultErrorUi
+import dev.gold.mdvault.ui.toVaultErrorUi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.Closeable
+import java.io.FileNotFoundException
 
 /**
  * PDF 페이지 세로 스크롤 뷰 — Android 내장 PdfRenderer 사용 (의존성 0개).
@@ -46,9 +54,14 @@ import java.io.Closeable
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun PdfPagesView(uri: Uri, modifier: Modifier = Modifier) {
+fun PdfPagesView(
+    uri: Uri,
+    modifier: Modifier = Modifier,
+    onBack: (() -> Unit)? = null,
+    onOpenVaultSetup: (() -> Unit)? = null,
+) {
     val context = LocalContext.current
-    var error by remember(uri) { mutableStateOf<String?>(null) }
+    var error by remember(uri) { mutableStateOf<VaultErrorUi?>(null) }
     var holder by remember(uri) { mutableStateOf<PdfDocumentHolder?>(null) }
     var scale by remember(uri) { mutableStateOf(1f) }
     var offsetX by remember(uri) { mutableStateOf(0f) }
@@ -68,8 +81,24 @@ fun PdfPagesView(uri: Uri, modifier: Modifier = Modifier) {
     DisposableEffect(uri) {
         val opened = try {
             PdfDocumentHolder.open(context, uri)
+        } catch (e: SecurityException) {
+            Log.w(TAG, "Permission lost while opening PDF", e)
+            error = VaultError.PermissionLost().toVaultErrorUi()
+            null
+        } catch (e: FileNotFoundException) {
+            Log.w(TAG, "PDF document missing", e)
+            error = VaultError.DocumentMissing(uri.toString()).toVaultErrorUi()
+            null
+        } catch (e: RemoteException) {
+            Log.w(TAG, "Provider unavailable while opening PDF", e)
+            error = VaultError.ProviderUnavailable().toVaultErrorUi()
+            null
+        } catch (e: IllegalStateException) {
+            Log.w(TAG, "Provider unavailable while opening PDF", e)
+            error = VaultError.ProviderUnavailable().toVaultErrorUi()
+            null
         } catch (e: Exception) {
-            error = e.message ?: e.javaClass.simpleName
+            error = VaultErrorUi(e.message ?: e.javaClass.simpleName)
             null
         }
         holder = opened
@@ -77,11 +106,17 @@ fun PdfPagesView(uri: Uri, modifier: Modifier = Modifier) {
     }
 
     when {
-        error != null -> Text(
-            text = "PDF를 열 수 없습니다: $error",
-            color = ComposeColor.White,
-            modifier = Modifier.padding(24.dp),
-        )
+        error != null -> Column(modifier = Modifier.padding(24.dp)) {
+            Text(
+                text = "PDF를 열 수 없습니다: ${error!!.message}",
+                color = ComposeColor.White,
+            )
+            VaultErrorRecoveryButton(
+                error = error!!,
+                onOpenVaultSetup = onOpenVaultSetup,
+                onBackToList = onBack,
+            )
+        }
         holder == null -> Text(
             text = "여는 중…",
             color = ComposeColor.White,
@@ -108,7 +143,7 @@ fun PdfPagesView(uri: Uri, modifier: Modifier = Modifier) {
                             translationY = offsetY,
                         ),
                 ) {
-                    items((0 until document.pageCount).toList()) { pageIndex ->
+                    items(count = document.pageCount) { pageIndex ->
                         PdfPageItem(document, pageIndex)
                     }
                 }
@@ -137,7 +172,10 @@ private fun PdfPageItem(document: PdfDocumentHolder, pageIndex: Int) {
         )
     } else {
         Box(
-            modifier = Modifier.fillMaxWidth().height(400.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(document.firstPageWidthHeightRatio)
+                .padding(bottom = 8.dp),
             contentAlignment = Alignment.Center,
         ) {
             Text("페이지 ${pageIndex + 1} 렌더링 중…")
@@ -146,6 +184,7 @@ private fun PdfPageItem(document: PdfDocumentHolder, pageIndex: Int) {
 }
 
 private const val TARGET_WIDTH_PX = 1440
+private const val TAG = "PdfPagesView"
 
 /** PdfRenderer는 스레드 안전이 아니므로 Mutex로 직렬화한다. */
 class PdfDocumentHolder private constructor(
@@ -155,6 +194,7 @@ class PdfDocumentHolder private constructor(
 
     private val mutex = Mutex()
     val pageCount: Int = renderer.pageCount
+    val firstPageWidthHeightRatio: Float = renderer.firstPageWidthHeightRatio()
 
     suspend fun renderPage(index: Int, targetWidthPx: Int): Bitmap = mutex.withLock {
         val page = renderer.openPage(index)
@@ -191,3 +231,15 @@ class PdfDocumentHolder private constructor(
         }
     }
 }
+
+private fun PdfRenderer.firstPageWidthHeightRatio(): Float {
+    if (pageCount <= 0) return DEFAULT_PDF_PAGE_WIDTH_HEIGHT_RATIO
+    val page = openPage(0)
+    return try {
+        page.width.toFloat() / page.height.toFloat().coerceAtLeast(1f)
+    } finally {
+        page.close()
+    }
+}
+
+private const val DEFAULT_PDF_PAGE_WIDTH_HEIGHT_RATIO = 0.707f
