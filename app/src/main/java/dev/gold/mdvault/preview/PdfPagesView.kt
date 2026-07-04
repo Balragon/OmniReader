@@ -13,6 +13,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.aspectRatio
@@ -142,6 +143,8 @@ fun PdfPagesView(
                             translationX = offsetX,
                             translationY = offsetY,
                         ),
+                    // 문서가 화면보다 짧으면(한두 페이지) 세로 중앙 정렬
+                    verticalArrangement = Arrangement.Center,
                 ) {
                     items(count = document.pageCount) { pageIndex ->
                         PdfPageItem(document, pageIndex)

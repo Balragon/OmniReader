@@ -581,10 +581,13 @@ private fun decodeSampledBitmap(
     targetWidthPx: Int,
     targetHeightPx: Int,
 ): Bitmap {
+    // 주의: inJustDecodeBounds 모드의 decodeStream은 성공해도 null을 반환하므로
+    // use{}의 반환값에 elvis를 걸면 안 된다 (스트림 null 체크와 분리할 것).
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-    resolver.openInputStream(uri)?.use { input ->
+    val boundsStream = resolver.openInputStream(uri) ?: throw FileNotFoundException("$uri")
+    boundsStream.use { input ->
         BitmapFactory.decodeStream(input, null, bounds)
-    } ?: throw FileNotFoundException("$uri")
+    }
     if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
         throw IllegalArgumentException("이미지 정보를 읽을 수 없습니다")
     }
@@ -593,7 +596,8 @@ private fun decodeSampledBitmap(
         inSampleSize = calculateInSampleSize(bounds.outWidth, bounds.outHeight, targetWidthPx, targetHeightPx)
         inPreferredConfig = Bitmap.Config.ARGB_8888
     }
-    return resolver.openInputStream(uri)?.use { input ->
+    val decodeInput = resolver.openInputStream(uri) ?: throw FileNotFoundException("$uri")
+    return decodeInput.use { input ->
         BitmapFactory.decodeStream(input, null, options)
     } ?: throw IllegalArgumentException("이미지를 디코딩할 수 없습니다")
 }

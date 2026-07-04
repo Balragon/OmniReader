@@ -21,6 +21,19 @@
 > - 보류: <하다 만 것, 알게 됐지만 안 고친 것 — 없으면 생략>
 > ```
 
+### 2026-07-05 Claude (이미지 열기 회귀 + PDF 중앙 정렬)
+- 요지: P0-B의 2-pass 이미지 디코딩 회귀 수정 — inJustDecodeBounds 모드
+  decodeStream은 성공해도 null을 반환하는데 use{} 반환값에 elvis를 걸어
+  모든 이미지가 "파일이 이동되었거나 삭제되었습니다"로 실패했음. 스트림
+  null 체크와 디코드 결과 분리. PDF는 화면보다 짧으면 세로 중앙 정렬.
+- 검증: gradlew test assembleRelease + 에뮬레이터(정상 이미지 열림, 1페이지
+  PDF 중앙 정렬 화면 확인), FATAL 0
+- ⚠️ 새 지뢰: use{}의 반환값은 람다 결과 — inJustDecodeBounds decodeStream과
+  조합 시 elvis 오판. 지뢰 표에 추가할 가치 있음
+- 보류: fixtures의 JPEG들(images.docx 유래)은 헤더만 유효한 깨진 파일 —
+  S0 생성기가 stdlib로 만든 것. BitmapFactory/PIL 모두 디코드 거부.
+  실사용 무관하나 이미지 관련 테스트에 쓰지 말 것 (tall.png는 정상)
+
 ### 2026-07-04 Claude+Codex (P0 하드닝, wf_2d4a028fa43b)
 - 요지: 출시 검토 P0 3건 — ①rememberSaveable+에디터 draft 자동보관/복원
   ②대용량 게이트(텍스트 4MB 부분표시·에디터 2MB 거부·이미지 다운샘플·DOCX
@@ -124,6 +137,7 @@
 | TextFieldState.undoState | 한글 조합 자모 단계를 전부 개별 undo 항목으로 기록 | 사용 금지 — ComposeEditorPort의 자체 스냅샷 undo 유지 |
 | connectedAndroidTest | 종료 시 앱 제거 → 볼트 설정 소실 | 테스트 후 release 재설치 + 볼트 재선택 |
 | API 35 DocumentsProvider | 자체 provider 직접 접근 SecurityException | 성능 측정은 앱 내 Spike 화면으로 (instrumentation 테스트는 @Ignore) |
+| use{}+inJustDecodeBounds | bounds 모드 decodeStream은 성공해도 null → use 반환값 elvis가 FNF 오판 | 스트림 null 체크와 디코드 결과 체크 분리 |
 | Mammoth XML 제어문자 | 불법 제어문자에 SAX crash | DocxXmlSanitizer가 전처리 (DOCTYPE 제거 포함 — XXE 방어 대체) |
 
 ## 검증 루틴 (변경 후 항상)
