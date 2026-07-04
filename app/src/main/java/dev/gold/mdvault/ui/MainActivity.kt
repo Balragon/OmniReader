@@ -78,8 +78,9 @@ class MainActivity : ComponentActivity() {
 }
 
 private enum class Screen {
-    VaultSetup,
     Home,
+    VaultSetup,
+    FileList,
     Reader,
     Editor,
     Spike,
@@ -95,87 +96,126 @@ private fun MdvaultApp(container: AppContainer) {
     val vaultState by container.vaultRepository.vaultTreeUri
         .map<Uri?, VaultState> { VaultState.Ready(it) }
         .collectAsState(initial = VaultState.Loading)
-    var screen by remember { mutableStateOf<Screen?>(null) }
+    var screen by remember { mutableStateOf(Screen.Home) }
+    var viewerUri by remember { mutableStateOf<Uri?>(null) }
     var directoryBackStack by remember { mutableStateOf(listOf("")) }
     var editorPath by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(vaultState) {
         val ready = vaultState as? VaultState.Ready ?: return@LaunchedEffect
-        if (screen == null) {
-            screen = if (ready.treeUri == null) Screen.VaultSetup else Screen.Home
-        }
-        if (ready.treeUri == null) {
-            screen = Screen.VaultSetup
+        if (ready.treeUri == null && screen in listOf(Screen.FileList, Screen.Reader, Screen.Editor)) {
+            screen = Screen.Home
             directoryBackStack = listOf("")
             editorPath = null
         }
     }
 
-    when (val state = vaultState) {
-        VaultState.Loading -> LoadingScreen()
-        is VaultState.Ready -> when (screen ?: if (state.treeUri == null) Screen.VaultSetup else Screen.Home) {
-            Screen.VaultSetup -> VaultSetupScreen(
-                vaultRepository = container.vaultRepository,
-                vaultTreeUri = state.treeUri,
-                onVaultSelected = {
-                    directoryBackStack = listOf("")
-                    editorPath = null
-                    screen = Screen.Home
-                },
-            )
-            Screen.Home -> HomeScreen(
-                vaultTreeUri = state.treeUri,
-                container = container,
-                currentDirectory = directoryBackStack.last(),
-                canNavigateUp = directoryBackStack.size > 1,
-                onNavigateUp = {
-                    if (directoryBackStack.size > 1) {
-                        directoryBackStack = directoryBackStack.dropLast(1)
+    val activeViewerUri = viewerUri
+    if (activeViewerUri != null) {
+        SingleDocumentViewerScreen(
+            uri = activeViewerUri,
+            markdownEngine = container.markdownEngine,
+            docxImporter = container.docxToMarkdownImporter,
+            recentFiles = container.recentFilesRepository,
+            onBack = { viewerUri = null },
+        )
+        return
+    }
+
+    when (screen) {
+        Screen.Home -> HomeScreen(
+            recentFilesRepository = container.recentFilesRepository,
+            canOpenVault = vaultState is VaultState.Ready,
+            onOpenDocument = { uri -> viewerUri = uri },
+            onOpenVault = {
+                val ready = vaultState as? VaultState.Ready
+                if (ready != null) {
+                    if (ready.treeUri == null) {
+                        screen = Screen.VaultSetup
+                    } else {
+                        screen = Screen.FileList
                     }
-                },
-                onOpenDirectory = { path ->
-                    directoryBackStack = directoryBackStack + path
-                },
-                onOpenFile = { path ->
-                    editorPath = path
-                    screen = Screen.Reader
-                },
-                onOpenVaultSetup = { screen = Screen.VaultSetup },
-                onOpenSpike = { screen = Screen.Spike },
-            )
-            Screen.Reader -> {
-                val path = editorPath
-                if (path == null) {
-                    LoadingScreen()
-                } else {
-                    MarkdownReaderScreen(
-                        vaultRepository = container.vaultRepository,
-                        markdownEngine = container.markdownEngine,
-                        docxExporter = container.vaultDocxExporter,
-                        relativePath = path,
-                        onEdit = { screen = Screen.Editor },
-                        onBack = { screen = Screen.Home },
-                        onOpenNote = { notePath -> editorPath = notePath },
-                    )
                 }
+            },
+        )
+        Screen.VaultSetup -> VaultSetupScreen(
+            vaultRepository = container.vaultRepository,
+            vaultTreeUri = (vaultState as? VaultState.Ready)?.treeUri,
+            onVaultSelected = {
+                directoryBackStack = listOf("")
+                editorPath = null
+                screen = Screen.FileList
+            },
+            onOpenSpike = { screen = Screen.Spike },
+        )
+        Screen.FileList -> {
+            val vaultTreeUri = (vaultState as? VaultState.Ready)?.treeUri
+            if (vaultTreeUri == null) {
+                VaultSetupScreen(
+                    vaultRepository = container.vaultRepository,
+                    vaultTreeUri = null,
+                    onVaultSelected = {
+                        directoryBackStack = listOf("")
+                        editorPath = null
+                        screen = Screen.FileList
+                    },
+                    onOpenSpike = { screen = Screen.Spike },
+                )
+            } else {
+                FileListScreen(
+                    vaultRepository = container.vaultRepository,
+                    docxToMarkdownImporter = container.docxToMarkdownImporter,
+                    currentDirectory = directoryBackStack.last(),
+                    canNavigateUp = directoryBackStack.size > 1,
+                    onNavigateUp = {
+                        if (directoryBackStack.size > 1) {
+                            directoryBackStack = directoryBackStack.dropLast(1)
+                        }
+                    },
+                    onOpenDirectory = { path ->
+                        directoryBackStack = directoryBackStack + path
+                    },
+                    onOpenFile = { path ->
+                        editorPath = path
+                        screen = Screen.Reader
+                    },
+                    onOpenDocument = { uri -> viewerUri = uri },
+                    onOpenVaultSetup = { screen = Screen.VaultSetup },
+                )
             }
-            Screen.Editor -> {
-                val path = editorPath
-                if (path == null) {
-                    LoadingScreen()
-                } else {
-                    EditorShellScreen(
-                        vaultRepository = container.vaultRepository,
-                        relativePath = path,
-                        onBack = { screen = Screen.Reader },
-                    )
-                }
-            }
-            Screen.Spike -> SpikeHome(
-                container = container,
-                onBackToHome = { screen = Screen.Home },
-            )
         }
+        Screen.Reader -> {
+            val path = editorPath
+            if (path == null) {
+                LoadingScreen()
+            } else {
+                MarkdownReaderScreen(
+                    vaultRepository = container.vaultRepository,
+                    markdownEngine = container.markdownEngine,
+                    docxExporter = container.vaultDocxExporter,
+                    relativePath = path,
+                    onEdit = { screen = Screen.Editor },
+                    onBack = { screen = Screen.FileList },
+                    onOpenNote = { notePath -> editorPath = notePath },
+                )
+            }
+        }
+        Screen.Editor -> {
+            val path = editorPath
+            if (path == null) {
+                LoadingScreen()
+            } else {
+                EditorShellScreen(
+                    vaultRepository = container.vaultRepository,
+                    relativePath = path,
+                    onBack = { screen = Screen.Reader },
+                )
+            }
+        }
+        Screen.Spike -> SpikeHome(
+            container = container,
+            onBackToHome = { screen = Screen.Home },
+        )
     }
 }
 
@@ -190,35 +230,6 @@ private fun LoadingScreen() {
             style = MaterialTheme.typography.bodyLarge,
         )
     }
-}
-
-@Composable
-private fun HomeScreen(
-    vaultTreeUri: Uri?,
-    container: AppContainer,
-    currentDirectory: String,
-    canNavigateUp: Boolean,
-    onNavigateUp: () -> Unit,
-    onOpenDirectory: (String) -> Unit,
-    onOpenFile: (String) -> Unit,
-    onOpenVaultSetup: () -> Unit,
-    onOpenSpike: () -> Unit,
-) {
-    if (vaultTreeUri == null) {
-        LoadingScreen()
-        return
-    }
-    FileListScreen(
-        vaultRepository = container.vaultRepository,
-        docxToMarkdownImporter = container.docxToMarkdownImporter,
-        currentDirectory = currentDirectory,
-        canNavigateUp = canNavigateUp,
-        onNavigateUp = onNavigateUp,
-        onOpenDirectory = onOpenDirectory,
-        onOpenFile = onOpenFile,
-        onOpenVaultSetup = onOpenVaultSetup,
-        onOpenSpike = onOpenSpike,
-    )
 }
 
 /** spike 하네스 홈: S1 import 측정 / S5 에디터 판정 전환. */

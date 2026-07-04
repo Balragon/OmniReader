@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -37,6 +36,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import dev.gold.mdvault.document.DocumentKind
+import dev.gold.mdvault.document.DocumentTypeDetector
 import dev.gold.mdvault.document.DocxToMarkdownImporter
 import dev.gold.mdvault.storage.SafDocument
 import dev.gold.mdvault.storage.VaultRepository
@@ -56,8 +57,8 @@ fun FileListScreen(
     onNavigateUp: () -> Unit,
     onOpenDirectory: (String) -> Unit,
     onOpenFile: (String) -> Unit,
+    onOpenDocument: (Uri) -> Unit,
     onOpenVaultSetup: () -> Unit,
-    onOpenSpike: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -123,7 +124,7 @@ fun FileListScreen(
         try {
             entries = withContext(Dispatchers.IO) {
                 vaultRepository.list(currentDirectory)
-                    .filter { it.isDirectory || it.displayName.endsWith(".md", ignoreCase = true) }
+                    .filter { it.isDirectory || it.isViewerSupported() }
                     .sortedWith(
                         compareBy<SafDocument> { !it.isDirectory }
                             .thenBy { it.displayName.lowercase() },
@@ -144,7 +145,7 @@ fun FileListScreen(
             TopAppBar(
                 title = {
                     Text(
-                        text = if (currentDirectory.isBlank()) "볼트 루트" else currentDirectory,
+                        text = if (currentDirectory.isBlank()) "내 폴더" else currentDirectory,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -159,6 +160,9 @@ fun FileListScreen(
                 actions = {
                     TextButton(onClick = ::createNote) {
                         Text("새 노트")
+                    }
+                    TextButton(onClick = onOpenVaultSetup) {
+                        Text("폴더 변경")
                     }
                     TextButton(
                         onClick = {
@@ -183,16 +187,6 @@ fun FileListScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            item {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = onOpenVaultSetup) {
-                        Text("볼트 설정")
-                    }
-                    Button(onClick = onOpenSpike) {
-                        Text("Spike")
-                    }
-                }
-            }
             status?.let { message ->
                 item {
                     Text(
@@ -216,7 +210,7 @@ fun FileListScreen(
                 }
                 entries!!.isEmpty() -> item {
                     Text(
-                        text = "표시할 폴더나 Markdown 파일이 없습니다.",
+                        text = "표시할 파일이나 폴더가 없습니다.",
                         style = MaterialTheme.typography.bodyLarge,
                     )
                 }
@@ -227,8 +221,10 @@ fun FileListScreen(
                             val path = joinVaultPath(currentDirectory, document.displayName)
                             if (document.isDirectory) {
                                 onOpenDirectory(path)
-                            } else {
+                            } else if (document.kind() == DocumentKind.MARKDOWN) {
                                 onOpenFile(path)
+                            } else {
+                                onOpenDocument(document.uri)
                             }
                         },
                     )
@@ -253,7 +249,7 @@ private fun VaultEntryRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = if (document.isDirectory) "폴더" else "MD",
+            text = document.label(),
             style = MaterialTheme.typography.labelLarge,
         )
         Column(modifier = Modifier.weight(1f)) {
@@ -272,6 +268,27 @@ private fun VaultEntryRow(
         }
     }
 }
+
+private fun SafDocument.kind(): DocumentKind =
+    DocumentTypeDetector.detect(displayName, mimeType)
+
+private fun SafDocument.isViewerSupported(): Boolean =
+    kind() != DocumentKind.UNSUPPORTED
+
+private fun SafDocument.label(): String =
+    if (isDirectory) {
+        "폴더"
+    } else {
+        when (kind()) {
+            DocumentKind.MARKDOWN -> "MD"
+            DocumentKind.PLAIN_TEXT -> "TXT"
+            DocumentKind.DOCX -> "DOCX"
+            DocumentKind.HTML -> "HTML"
+            DocumentKind.PDF -> "PDF"
+            DocumentKind.IMAGE -> "이미지"
+            DocumentKind.UNSUPPORTED -> "파일"
+        }
+    }
 
 private data class ImportResult(
     val markdownPath: String,

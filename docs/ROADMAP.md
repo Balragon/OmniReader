@@ -25,6 +25,12 @@ S1 실패(R8 불통과 또는 광범위 crash) 시 Mammoth.js WebView sandbox �
   (Second Brain 연동은 하지 않기로 확정)
 - P0-2 완료 시점부터 실기기 dogfooding 시작, friction log 기록
 
+## 뷰어 피벗 (2026-07-04, 사용자 방향 확정)
+
+핵심 용도 = "내 파일"에서 파일 탭 → 열리는 연결 앱 (md/txt/docx/html/pdf/이미지).
+- ✅ Batch 1+3: 단일 파일 뷰어 파이프라인 + ACTION_VIEW/SEND 인텐트
+- ✅ Batch 2: 홈 재구성 (파일 열기 + 최근 파일 + 내 폴더, 볼트 비강제, Spike 숨김)
+
 ## Phase 3 — P1 (dogfooding friction 순서대로)
 
 - ✅ DOCX export S3 승격 (reader "DOCX" 버튼, 2026-07-04 에뮬레이터+LibreOffice 검증)
