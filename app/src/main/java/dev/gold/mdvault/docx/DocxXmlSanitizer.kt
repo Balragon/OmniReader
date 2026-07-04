@@ -28,7 +28,9 @@ internal object DocxXmlSanitizer {
                 while (entry != null) {
                     val bytes = zipIn.readBytes()
                     val cleaned = if (entry.name.isXmlPart()) {
-                        filterIllegalXmlBytes(bytes).also { stripped += bytes.size - it.size }
+                        val filtered = stripDoctype(filterIllegalXmlBytes(bytes))
+                        stripped += bytes.size - filtered.size
+                        filtered
                     } else {
                         bytes
                     }
@@ -40,6 +42,21 @@ internal object DocxXmlSanitizer {
             }
         }
         return Sanitized(output.toByteArray(), stripped)
+    }
+
+    /**
+     * DOCTYPE 선언 제거 (XXE/billion-laughs 방어). Android에서는
+     * disallow-doctype-decl feature를 파서에 걸 수 없어(AndroidSaxCompat 참조)
+     * 입력에서 선언 자체를 제거한다. 정상 DOCX에 DOCTYPE은 존재하지 않는다.
+     */
+    private fun stripDoctype(bytes: ByteArray): ByteArray {
+        val text = bytes.toString(Charsets.UTF_8)
+        if (!text.contains("<!DOCTYPE", ignoreCase = true)) return bytes
+        val cleaned = Regex(
+            """<!DOCTYPE[^>\[]*(\[[^]]*])?[^>]*>""",
+            RegexOption.IGNORE_CASE,
+        ).replace(text, "")
+        return cleaned.toByteArray(Charsets.UTF_8)
     }
 
     private fun String.isXmlPart(): Boolean =

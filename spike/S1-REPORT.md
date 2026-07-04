@@ -62,3 +62,37 @@ data class HtmlImportResult(html, warnings: List<ConversionWarning>, extractedAs
 1. `adb install app/build/outputs/apk/release/app-release.apk`
 2. 앱 실행 → "Import DOCX" → fixtures/docx/simple-korean.docx, images.docx 선택
 3. 화면에 표시되는 elapsed ms 기록 → 이 리포트에 추기
+
+---
+
+## 추기 (2026-07-04): 에뮬레이터 스모크에서 발견된 Android 런타임 지뢰 2건
+
+JVM JUnit으로는 **원천적으로 재현 불가능**했던 문제들 — API 34 ARM 에뮬레이터
+release 스모크 테스트에서 발견. "R8 keep rule 0개" 판정은 아래와 같이 수정된다.
+
+### 지뢰 A: R8 class merging × flexmark
+
+R8 horizontal class merging이 flexmark의 파서 팩토리 클래스들을 병합
+→ `DependencyResolver`가 클래스 정체성으로 의존성을 해석하다
+`IllegalStateException: Dependent class ... is duplicated`로 앱 시작 즉시 crash.
+**처치**: `-keepnames class com.vladsch.flexmark.** { *; }` (proguard-rules.pro).
+mammoth 자체는 여전히 keep rule 불필요.
+
+### 지뢰 B: Android libcore × mammoth SAX 보안 feature
+
+Android는 `SAXParserFactory.newInstance()`가 harmony `SAXParserFactoryImpl`을
+**하드코딩**(시스템 프로퍼티 무시)하고, 이 구현은 mammoth가 켜는
+`disallow-doctype-decl` 등 Apache 네임스페이스 feature를
+`SAXNotRecognizedException`으로 거부 → **기기에서 모든 DOCX import 실패**.
+JVM(Xerces)에서는 정상이라 fixture 테스트가 통과했었다.
+**처치**: `SimpleSax` 1개 클래스만 best-effort로 패치한 로컬 jar
+(`app/libs/mammoth-1.9.0-android.jar`, 절차: tools/mammoth-android-patch/README.md).
+잃어버리는 DOCTYPE/XXE 방어는 DocxXmlSanitizer의 DOCTYPE 제거로 대체
+(DocxXmlSanitizerTest 강제).
+
+### 갱신된 판정
+
+✅ 성공 유지 — 단, **조건: 패치 jar + flexmark keepnames 필수**.
+에뮬레이터(API 34)에서 simple-korean.docx, images.docx(11MB, asset 5개) import
+및 reader 렌더링까지 검증 완료. 실기기(Galaxy) 시간 측정만 잔여.
+에뮬레이터: `emulator -avd mdvault-api34` (headless 스모크 절차는 이 세션 로그 참조).

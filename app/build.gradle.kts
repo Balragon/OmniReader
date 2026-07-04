@@ -61,7 +61,9 @@ dependencies {
     implementation(libs.flexmark.ext.tables)
     implementation(libs.flexmark.ext.gfm.tasklist)
     implementation(libs.flexmark.ext.yaml.front.matter)
-    implementation(libs.mammoth)
+    // mammoth은 Maven 원본 대신 Android SAX 호환 패치 jar 사용
+    // (SimpleSax 1개 클래스만 수정 — tools/mammoth-android-patch/README.md)
+    implementation(files("libs/mammoth-1.9.0-android.jar"))
     implementation(libs.jsoup)
 
     testImplementation(libs.junit)
