@@ -21,7 +21,7 @@
 > - 보류: <하다 만 것, 알게 됐지만 안 고친 것 — 없으면 생략>
 > ```
 
-### 2026-07-04 Codex (5998326..HEAD)
+### 2026-07-04 Codex (ad3028e..HEAD)
 - 요지: 이미지/PDF를 같은 미디어 뷰어 크롬으로 통일(고정 뒤로가기 바)하고,
   PDF에 핀치 줌/확대 후 이동 레이어를 추가. 테스트용 mdvault PNG/JPG/PDF 정리.
 - 검증: `./gradlew test assembleRelease` 통과. release APK 에뮬레이터 설치 후
