@@ -4,14 +4,18 @@ import android.app.Activity
 import android.content.ContentResolver
 import android.content.Context
 import android.content.ContextWrapper
+import android.database.Cursor
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.graphics.Color as AndroidColor
+import android.graphics.ImageDecoder
+import android.graphics.drawable.AnimatedImageDrawable
 import android.net.Uri
 import android.os.RemoteException
+import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import android.util.Log
 import android.webkit.WebView
+import android.widget.ImageView
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -39,6 +43,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -65,6 +70,7 @@ import dev.gold.mdvault.document.DocumentKind
 import dev.gold.mdvault.document.DocumentTypeDetector
 import dev.gold.mdvault.document.DocxToMarkdownImporter
 import dev.gold.mdvault.markdown.MarkdownEngine
+import dev.gold.mdvault.settings.ReaderSettingsRepository
 import dev.gold.mdvault.storage.BoundedTextRead
 import dev.gold.mdvault.storage.RecentFilesRepository
 import dev.gold.mdvault.storage.VaultError
@@ -78,6 +84,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileNotFoundException
+import java.io.IOException
 import java.security.MessageDigest
 import kotlin.math.roundToInt
 
@@ -97,14 +104,19 @@ fun SingleDocumentViewerScreen(
     markdownEngine: MarkdownEngine,
     docxImporter: DocxToMarkdownImporter,
     recentFiles: RecentFilesRepository,
+    readerSettingsRepository: ReaderSettingsRepository,
     onBack: () -> Unit,
     onOpenVaultSetup: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val fontScalePercent by readerSettingsRepository.fontScalePercent.collectAsState(initial = 100)
     var state by remember(uri) { mutableStateOf<ViewerState>(ViewerState.Loading) }
     var displayName by remember(uri) { mutableStateOf("문서") }
     var notice by remember(uri) { mutableStateOf<String?>(null) }
+    // 읽기 위치 키. URI는 같은 파일이라도 오픈마다 바뀔 수 있어(Downloads provider가
+    // raw:↔msf: 문서 ID를 오감) 파일명+크기로 식별한다.
+    var documentKey by remember(uri) { mutableStateOf(uri.toString()) }
 
     LaunchedEffect(uri) {
         withContext(Dispatchers.IO) {
@@ -112,6 +124,7 @@ fun SingleDocumentViewerScreen(
                 val resolver = context.contentResolver
                 val name = resolver.displayNameOf(uri) ?: uri.lastPathSegment ?: "문서"
                 displayName = name
+                documentKey = "doc:$name:${resolver.openableSize(uri) ?: -1}"
                 val kind = DocumentTypeDetector.detect(name, resolver.getType(uri))
                 val loaded = loadDocument(kind, name, uri, resolver, markdownEngine, docxImporter, context.cacheDir)
                 notice = loaded.notice
@@ -155,6 +168,8 @@ fun SingleDocumentViewerScreen(
             PdfPagesView(
                 uri = uri,
                 modifier = Modifier.fillMaxSize(),
+                readerSettingsRepository = readerSettingsRepository,
+                documentKey = documentKey,
                 onBack = onBack,
                 onOpenVaultSetup = onOpenVaultSetup,
             )
@@ -175,15 +190,25 @@ fun SingleDocumentViewerScreen(
                 maxLines = 1,
             )
             val docxState = state as? ViewerState.Web
-            if (docxState?.savableMarkdown != null) {
-                val saveLauncher = rememberLauncherForActivityResult(
+            val savableMarkdown = docxState?.savableMarkdown
+            if (docxState != null) {
+                TextButton(onClick = {
+                    scope.launch {
+                        readerSettingsRepository.setFontScalePercent(
+                            nextReaderFontScalePercent(fontScalePercent),
+                        )
+                    }
+                }) { Text("Aa") }
+            }
+            if (docxState != null && savableMarkdown != null) {
+                val markdownSaveLauncher = rememberLauncherForActivityResult(
                     ActivityResultContracts.CreateDocument("text/markdown"),
                 ) { target ->
                     if (target != null) {
                         scope.launch(Dispatchers.IO) {
                             notice = try {
                                 context.contentResolver.openOutputStream(target, "wt")!!.use { output ->
-                                    output.write(docxState.savableMarkdown.toByteArray(Charsets.UTF_8))
+                                    output.write(savableMarkdown.toByteArray(Charsets.UTF_8))
                                 }
                                 "MD 저장 완료 (이미지는 별도 저장되지 않음)"
                             } catch (e: Exception) {
@@ -192,8 +217,37 @@ fun SingleDocumentViewerScreen(
                         }
                     }
                 }
+                val packageSaveLauncher = rememberLauncherForActivityResult(
+                    ActivityResultContracts.OpenDocumentTree(),
+                ) { targetTree ->
+                    if (targetTree != null) {
+                        scope.launch(Dispatchers.IO) {
+                            notice = try {
+                                val result = saveMarkdownWithAssets(
+                                    resolver = context.contentResolver,
+                                    targetTree = targetTree,
+                                    baseName = displayName.exportBaseName(),
+                                    markdown = savableMarkdown,
+                                    assetRoot = docxState.assetRoot,
+                                    assetRelativePaths = docxState.assetRelativePaths,
+                                )
+                                if (result.savedAssets == result.totalAssets) {
+                                    "MD 저장 완료 (이미지 ${result.savedAssets}개 포함)"
+                                } else {
+                                    "MD 저장 완료 (이미지 ${result.savedAssets}/${result.totalAssets}개 포함)"
+                                }
+                            } catch (e: Exception) {
+                                "저장 실패: ${e.message ?: e.javaClass.simpleName}"
+                            }
+                        }
+                    }
+                }
                 TextButton(onClick = {
-                    saveLauncher.launch(displayName.substringBeforeLast('.') + ".md")
+                    if (docxState.assetRelativePaths.isEmpty()) {
+                        markdownSaveLauncher.launch(displayName.exportBaseName() + ".md")
+                    } else {
+                        packageSaveLauncher.launch(null)
+                    }
                 }) { Text("MD 저장") }
             }
         }
@@ -218,6 +272,9 @@ fun SingleDocumentViewerScreen(
             is ViewerState.Pdf -> Unit
             is ViewerState.Web -> DocumentWebViewer(
                 state = currentState,
+                documentKey = documentKey,
+                readerSettingsRepository = readerSettingsRepository,
+                fontScalePercent = fontScalePercent,
                 modifier = Modifier.fillMaxSize(),
             )
         }
@@ -336,7 +393,7 @@ private fun FullscreenImageContent(
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
-    var image by remember(uri) { mutableStateOf<ImageBitmap?>(null) }
+    var image by remember(uri) { mutableStateOf<FullscreenImage?>(null) }
     var error by remember(uri) { mutableStateOf<VaultErrorUi?>(null) }
     var scale by remember(uri) { mutableStateOf(1f) }
     var offsetX by remember(uri) { mutableStateOf(0f) }
@@ -369,8 +426,13 @@ private fun FullscreenImageContent(
             error = null
             try {
                 image = withContext(Dispatchers.IO) {
-                    decodeSampledBitmap(context.contentResolver, uri, targetWidthPx, targetHeightPx)
-                        .asImageBitmap()
+                    decodeFullscreenImage(
+                        resolver = context.contentResolver,
+                        uri = uri,
+                        displayName = displayName,
+                        targetWidthPx = targetWidthPx,
+                        targetHeightPx = targetHeightPx,
+                    )
                 }
             } catch (e: SecurityException) {
                 Log.w(TAG, "Permission lost while opening image", e)
@@ -384,11 +446,15 @@ private fun FullscreenImageContent(
             } catch (e: IllegalStateException) {
                 Log.w(TAG, "Provider unavailable while opening image", e)
                 error = VaultError.ProviderUnavailable().toVaultErrorUi()
+            } catch (e: ImageDecoder.DecodeException) {
+                Log.w(TAG, "Failed to decode image", e)
+                error = VaultErrorUi("이미지를 디코딩할 수 없습니다")
             } catch (e: Exception) {
                 error = VaultErrorUi(e.message ?: e.javaClass.simpleName)
             }
         }
 
+        val currentImage = image
         when {
             error != null -> Column(
                 modifier = Modifier
@@ -406,37 +472,117 @@ private fun FullscreenImageContent(
                     onBackToList = onBack,
                 )
             }
-            image == null -> Text(
+            currentImage == null -> Text(
                 text = "여는 중…",
                 color = Color.White,
                 modifier = Modifier
                     .align(Alignment.Center)
                     .padding(24.dp),
             )
-            else -> Image(
-                bitmap = image!!,
+            currentImage is FullscreenImage.Static -> Image(
+                bitmap = currentImage.bitmap,
                 contentDescription = displayName,
                 contentScale = ContentScale.Fit,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer(
-                        scaleX = scale,
-                        scaleY = scale,
-                        translationX = offsetX,
-                        translationY = offsetY,
-                    ),
+                modifier = fullscreenImageModifier(scale, offsetX, offsetY),
+            )
+            currentImage is FullscreenImage.Animated -> AnimatedFullscreenImage(
+                image = currentImage,
+                displayName = displayName,
+                modifier = fullscreenImageModifier(scale, offsetX, offsetY),
             )
         }
     }
 }
 
 @Composable
+private fun AnimatedFullscreenImage(
+    image: FullscreenImage.Animated,
+    displayName: String,
+    modifier: Modifier = Modifier,
+) {
+    DisposableEffect(image.drawable) {
+        image.drawable.start()
+        onDispose { image.drawable.stop() }
+    }
+
+    AndroidView(
+        modifier = modifier,
+        factory = { ctx ->
+            ImageView(ctx).apply {
+                setBackgroundColor(AndroidColor.BLACK)
+                scaleType = ImageView.ScaleType.FIT_CENTER
+                contentDescription = displayName
+                setImageDrawable(image.drawable)
+                image.drawable.start()
+            }
+        },
+        update = { view ->
+            view.contentDescription = displayName
+            if (view.drawable !== image.drawable) {
+                view.setImageDrawable(image.drawable)
+            }
+            if (!image.drawable.isRunning) {
+                image.drawable.start()
+            }
+        },
+    )
+}
+
+private fun fullscreenImageModifier(
+    scale: Float,
+    offsetX: Float,
+    offsetY: Float,
+): Modifier = Modifier
+    .fillMaxSize()
+    .graphicsLayer(
+        scaleX = scale,
+        scaleY = scale,
+        translationX = offsetX,
+        translationY = offsetY,
+    )
+
+@Composable
 private fun DocumentWebViewer(
     state: ViewerState.Web,
+    documentKey: String,
+    readerSettingsRepository: ReaderSettingsRepository,
+    fontScalePercent: Int,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
-    key(state.html) {
+    var webView by remember(documentKey, state.html) { mutableStateOf<WebView?>(null) }
+    var pageFinished by remember(documentKey, state.html) { mutableStateOf(false) }
+    var restored by remember(documentKey, state.html) { mutableStateOf(false) }
+    var restoreRatio by remember(documentKey, state.html) { mutableStateOf<Float?>(null) }
+
+    LaunchedEffect(readerSettingsRepository, documentKey, state.html) {
+        restoreRatio = withContext(Dispatchers.IO) {
+            readerSettingsRepository.readingPosition(documentKey).webReadingRatioOrNull()
+        }
+    }
+
+    LaunchedEffect(pageFinished, restoreRatio, webView) {
+        val view = webView
+        val ratio = restoreRatio
+        if (!restored && pageFinished && view != null && ratio != null) {
+            restored = true
+            if (ratio >= WEB_RESTORE_MIN_RATIO) {
+                view.post {
+                    view.scrollTo(0, (webContentHeightPx(view) * ratio).roundToInt())
+                }
+            }
+        }
+    }
+
+    DisposableEffect(documentKey, state.html) {
+        onDispose {
+            webView?.let { view ->
+                saveWebReadingPositionAsync(readerSettingsRepository, documentKey, view)
+            }
+        }
+    }
+
+    key(documentKey, state.html) {
         AndroidView(
             modifier = modifier,
             factory = { ctx ->
@@ -445,6 +591,7 @@ private fun DocumentWebViewer(
                     settings.blockNetworkLoads = true
                     settings.allowFileAccess = false
                     settings.allowContentAccess = false
+                    settings.textZoom = fontScalePercent
                     if (state.enableZoom) {
                         settings.useWideViewPort = true
                         settings.loadWithOverviewMode = true
@@ -455,8 +602,19 @@ private fun DocumentWebViewer(
                     webViewClient = DocumentWebViewClient(
                         context = context,
                         loadAsset = state.loadAsset,
+                        onPageFinished = { view ->
+                            webView = view
+                            pageFinished = true
+                        },
                     )
+                    webView = this
                     loadDataWithBaseURL(vaultBaseUrl(""), state.html, "text/html", "utf-8", null)
+                }
+            },
+            update = { view ->
+                webView = view
+                if (view.settings.textZoom != fontScalePercent) {
+                    view.settings.textZoom = fontScalePercent
                 }
             },
         )
@@ -472,6 +630,8 @@ private sealed interface ViewerState {
         val html: String,
         val loadAsset: (String) -> ByteArray?,
         val savableMarkdown: String? = null,
+        val assetRoot: File? = null,
+        val assetRelativePaths: List<String> = emptyList(),
         val enableZoom: Boolean = false,
     ) : ViewerState
 }
@@ -480,6 +640,11 @@ private data class LoadedViewerDocument(
     val state: ViewerState,
     val notice: String? = null,
 )
+
+private sealed interface FullscreenImage {
+    data class Static(val bitmap: ImageBitmap) : FullscreenImage
+    data class Animated(val drawable: AnimatedImageDrawable) : FullscreenImage
+}
 
 private fun loadDocument(
     kind: DocumentKind,
@@ -537,7 +702,7 @@ private fun loadDocument(
             val input = resolver.openInputStream(uri) ?: throw FileNotFoundException("$uri")
             val imported = input.use { stream ->
                 docxImporter.import(stream) { relativePath, _, bytes ->
-                    val target = File(assetRoot, relativePath)
+                    val target = assetRoot.resolveSafeAsset(relativePath)
                     target.parentFile?.mkdirs()
                     target.writeBytes(bytes)
                 }
@@ -546,9 +711,11 @@ private fun loadDocument(
                 ViewerState.Web(
                     html = PreviewHtmlBuilder.build(markdownEngine.toHtml(imported.markdown)),
                     loadAsset = { relativePath ->
-                        File(assetRoot, relativePath).takeIf { it.isFile }?.readBytes()
+                        assetRoot.resolveSafeAssetOrNull(relativePath)?.takeIf { it.isFile }?.readBytes()
                     },
                     savableMarkdown = imported.markdown,
+                    assetRoot = assetRoot,
+                    assetRelativePaths = imported.assets.map { it.relativePath },
                 ),
             )
         }
@@ -557,6 +724,212 @@ private fun loadDocument(
     DocumentKind.UNSUPPORTED ->
         LoadedViewerDocument(ViewerState.Error(VaultErrorUi("지원하지 않는 형식입니다: $displayName")))
 }
+
+private data class MarkdownAssetSaveResult(
+    val totalAssets: Int,
+    val savedAssets: Int,
+)
+
+private data class SafChild(
+    val uri: Uri,
+    val displayName: String,
+    val mimeType: String,
+)
+
+private data class CreatedSafDirectory(
+    val uri: Uri,
+    val displayName: String,
+)
+
+private fun saveMarkdownWithAssets(
+    resolver: ContentResolver,
+    targetTree: Uri,
+    baseName: String,
+    markdown: String,
+    assetRoot: File?,
+    assetRelativePaths: List<String>,
+): MarkdownAssetSaveResult {
+    val rootUri = DocumentsContract.buildDocumentUriUsingTree(
+        targetTree,
+        DocumentsContract.getTreeDocumentId(targetTree),
+    )
+    val exportDirectory = createUniqueSafDirectory(resolver, targetTree, rootUri, baseName)
+    val markdownUri = DocumentsContract.createDocument(
+        resolver,
+        exportDirectory.uri,
+        MARKDOWN_MIME_TYPE,
+        "${exportDirectory.displayName}.md",
+    ) ?: throw IOException("MD 파일을 만들 수 없습니다")
+    resolver.openOutputStream(markdownUri, "wt")?.use { output ->
+        output.write(markdown.toByteArray(Charsets.UTF_8))
+    } ?: throw IOException("MD 파일을 쓸 수 없습니다")
+
+    val assetPaths = assetRelativePaths.distinct()
+    var savedAssets = 0
+    for (relativePath in assetPaths) {
+        runCatching {
+            val source = assetRoot?.resolveSafeAssetOrNull(relativePath)
+                ?.takeIf { it.isFile }
+                ?: throw FileNotFoundException(relativePath)
+            writeAssetDocument(resolver, targetTree, exportDirectory.uri, relativePath, source)
+            savedAssets += 1
+        }.onFailure { error ->
+            Log.w(TAG, "Failed to save DOCX asset: $relativePath", error)
+        }
+    }
+
+    return MarkdownAssetSaveResult(
+        totalAssets = assetPaths.size,
+        savedAssets = savedAssets,
+    )
+}
+
+private fun createUniqueSafDirectory(
+    resolver: ContentResolver,
+    treeUri: Uri,
+    parentUri: Uri,
+    baseName: String,
+): CreatedSafDirectory {
+    val existingNames = querySafChildren(resolver, treeUri, parentUri)
+        .map { it.displayName }
+        .toSet()
+    var index = 1
+    while (true) {
+        val candidate = if (index == 1) baseName else "$baseName-$index"
+        if (candidate !in existingNames) {
+            val uri = DocumentsContract.createDocument(
+                resolver,
+                parentUri,
+                DocumentsContract.Document.MIME_TYPE_DIR,
+                candidate,
+            ) ?: throw IOException("저장 폴더를 만들 수 없습니다")
+            return CreatedSafDirectory(uri = uri, displayName = candidate)
+        }
+        index += 1
+    }
+}
+
+private fun writeAssetDocument(
+    resolver: ContentResolver,
+    treeUri: Uri,
+    exportDirectory: Uri,
+    relativePath: String,
+    source: File,
+) {
+    val segments = normalizeAssetRelativePath(relativePath)
+    val parentUri = ensureSafDirectories(resolver, treeUri, exportDirectory, segments.dropLast(1))
+    val fileName = segments.last()
+    val assetUri = DocumentsContract.createDocument(
+        resolver,
+        parentUri,
+        assetMimeType(fileName),
+        fileName,
+    ) ?: throw IOException("이미지 파일을 만들 수 없습니다: $relativePath")
+    resolver.openOutputStream(assetUri, "w")?.use { output ->
+        source.inputStream().use { input ->
+            input.copyTo(output)
+        }
+    } ?: throw IOException("이미지 파일을 쓸 수 없습니다: $relativePath")
+}
+
+private fun ensureSafDirectories(
+    resolver: ContentResolver,
+    treeUri: Uri,
+    startUri: Uri,
+    directorySegments: List<String>,
+): Uri {
+    var parentUri = startUri
+    for (segment in directorySegments) {
+        val existing = findSafChild(resolver, treeUri, parentUri, segment)
+        parentUri = when {
+            existing == null -> DocumentsContract.createDocument(
+                resolver,
+                parentUri,
+                DocumentsContract.Document.MIME_TYPE_DIR,
+                segment,
+            ) ?: throw IOException("이미지 폴더를 만들 수 없습니다: $segment")
+            existing.mimeType == DocumentsContract.Document.MIME_TYPE_DIR -> existing.uri
+            else -> throw IOException("이미지 폴더 경로가 파일과 충돌합니다: $segment")
+        }
+    }
+    return parentUri
+}
+
+private fun findSafChild(
+    resolver: ContentResolver,
+    treeUri: Uri,
+    parentUri: Uri,
+    displayName: String,
+): SafChild? =
+    querySafChildren(resolver, treeUri, parentUri).firstOrNull { it.displayName == displayName }
+
+private fun querySafChildren(
+    resolver: ContentResolver,
+    treeUri: Uri,
+    parentUri: Uri,
+): List<SafChild> {
+    val parentDocumentId = DocumentsContract.getDocumentId(parentUri)
+    val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentDocumentId)
+    val children = mutableListOf<SafChild>()
+    resolver.query(childrenUri, SAF_CHILD_PROJECTION, null, null, null)?.use { cursor ->
+        while (cursor.moveToNext()) {
+            children += cursor.toSafChild(treeUri)
+        }
+    } ?: throw IOException("대상 폴더를 읽을 수 없습니다")
+    return children
+}
+
+private fun Cursor.toSafChild(treeUri: Uri): SafChild {
+    val documentId = getString(getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID))
+    return SafChild(
+        uri = DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId),
+        displayName = getString(getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME)).orEmpty(),
+        mimeType = getString(getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_MIME_TYPE)).orEmpty(),
+    )
+}
+
+private fun File.resolveSafeAsset(relativePath: String): File {
+    val target = normalizeAssetRelativePath(relativePath).fold(this) { parent, segment ->
+        File(parent, segment)
+    }
+    val rootPath = canonicalFile.path
+    val targetPath = target.canonicalFile.path
+    if (targetPath != rootPath && !targetPath.startsWith(rootPath + File.separator)) {
+        throw IOException("이미지 경로가 올바르지 않습니다: $relativePath")
+    }
+    return target
+}
+
+private fun File.resolveSafeAssetOrNull(relativePath: String): File? =
+    runCatching { resolveSafeAsset(relativePath) }.getOrNull()
+
+private fun normalizeAssetRelativePath(relativePath: String): List<String> {
+    val segments = relativePath.split('/').filter { it.isNotBlank() }
+    require(segments.isNotEmpty() && segments.none { it == "." || it == ".." }) {
+        "이미지 경로가 올바르지 않습니다: $relativePath"
+    }
+    return segments
+}
+
+private fun String.exportBaseName(): String {
+    val baseName = substringBeforeLast('.', this)
+        .trim()
+        .replace('/', '_')
+        .replace('\\', '_')
+    return baseName.ifBlank { "문서" }
+}
+
+private fun assetMimeType(path: String): String =
+    when (path.substringAfterLast('.', "").lowercase()) {
+        "png" -> "image/png"
+        "jpg", "jpeg" -> "image/jpeg"
+        "gif" -> "image/gif"
+        "webp" -> "image/webp"
+        "bmp" -> "image/bmp"
+        "svg" -> "image/svg+xml"
+        "tif", "tiff" -> "image/tiff"
+        else -> BINARY_MIME_TYPE
+    }
 
 private fun ContentResolver.displayNameOf(uri: Uri): String? {
     query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
@@ -575,31 +948,65 @@ private fun ContentResolver.readTextPreview(uri: Uri): BoundedTextRead =
 private fun BoundedTextRead.truncationNotice(): String? =
     if (truncated) LARGE_TEXT_NOTICE else null
 
+private fun decodeFullscreenImage(
+    resolver: ContentResolver,
+    uri: Uri,
+    displayName: String,
+    targetWidthPx: Int,
+    targetHeightPx: Int,
+): FullscreenImage {
+    if (isAnimatedImageCandidate(resolver, uri, displayName)) {
+        val drawable = ImageDecoder.decodeDrawable(ImageDecoder.createSource(resolver, uri)) { decoder, info, _ ->
+            decoder.configureForViewer(info, targetWidthPx, targetHeightPx, useSoftwareAllocator = false)
+        }
+        if (drawable is AnimatedImageDrawable) {
+            return FullscreenImage.Animated(drawable)
+        }
+    }
+
+    return FullscreenImage.Static(
+        decodeSampledBitmap(resolver, uri, targetWidthPx, targetHeightPx).asImageBitmap(),
+    )
+}
+
 private fun decodeSampledBitmap(
     resolver: ContentResolver,
     uri: Uri,
     targetWidthPx: Int,
     targetHeightPx: Int,
 ): Bitmap {
-    // 주의: inJustDecodeBounds 모드의 decodeStream은 성공해도 null을 반환하므로
-    // use{}의 반환값에 elvis를 걸면 안 된다 (스트림 null 체크와 분리할 것).
-    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-    val boundsStream = resolver.openInputStream(uri) ?: throw FileNotFoundException("$uri")
-    boundsStream.use { input ->
-        BitmapFactory.decodeStream(input, null, bounds)
+    return ImageDecoder.decodeBitmap(ImageDecoder.createSource(resolver, uri)) { decoder, info, _ ->
+        decoder.configureForViewer(info, targetWidthPx, targetHeightPx, useSoftwareAllocator = true)
     }
-    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+}
+
+private fun ImageDecoder.configureForViewer(
+    info: ImageDecoder.ImageInfo,
+    targetWidthPx: Int,
+    targetHeightPx: Int,
+    useSoftwareAllocator: Boolean,
+) {
+    val size = info.size
+    if (size.width <= 0 || size.height <= 0) {
         throw IllegalArgumentException("이미지 정보를 읽을 수 없습니다")
     }
-
-    val options = BitmapFactory.Options().apply {
-        inSampleSize = calculateInSampleSize(bounds.outWidth, bounds.outHeight, targetWidthPx, targetHeightPx)
-        inPreferredConfig = Bitmap.Config.ARGB_8888
+    setTargetSampleSize(calculateInSampleSize(size.width, size.height, targetWidthPx, targetHeightPx))
+    if (useSoftwareAllocator) {
+        setAllocator(ImageDecoder.ALLOCATOR_SOFTWARE)
     }
-    val decodeInput = resolver.openInputStream(uri) ?: throw FileNotFoundException("$uri")
-    return decodeInput.use { input ->
-        BitmapFactory.decodeStream(input, null, options)
-    } ?: throw IllegalArgumentException("이미지를 디코딩할 수 없습니다")
+}
+
+private fun isAnimatedImageCandidate(
+    resolver: ContentResolver,
+    uri: Uri,
+    displayName: String,
+): Boolean {
+    val mimeType = resolver.getType(uri)?.lowercase()
+    val name = displayName.lowercase()
+    return mimeType == "image/gif" ||
+        mimeType == "image/webp" ||
+        name.endsWith(".gif") ||
+        name.endsWith(".webp")
 }
 
 private fun calculateInSampleSize(
@@ -628,4 +1035,11 @@ private const val TEXT_PREVIEW_MAX_BYTES = 4 * 1024 * 1024
 private const val DOCX_IMPORT_MAX_BYTES = 50L * 1024L * 1024L
 private const val IMAGE_SCREEN_MULTIPLIER = 2
 private const val LARGE_TEXT_NOTICE = "파일이 너무 커서 앞부분만 표시합니다"
+private const val MARKDOWN_MIME_TYPE = "text/markdown"
+private const val BINARY_MIME_TYPE = "application/octet-stream"
 private const val TAG = "SingleDocumentViewer"
+private val SAF_CHILD_PROJECTION = arrayOf(
+    DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+    DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+    DocumentsContract.Document.COLUMN_MIME_TYPE,
+)

@@ -21,6 +21,26 @@
 > - 보류: <하다 만 것, 알게 됐지만 안 고친 것 — 없으면 생략>
 > ```
 
+### 2026-07-05 Claude+Codex (P1 reader polish, wf_29702ed7feed)
+- 요지: P1 배치 — ①이미지 뷰어를 ImageDecoder로 전환(EXIF 회전 자동 적용,
+  GIF/애니메이션 WebP 재생, 샘플링 OOM 가드 유지) ②DOCX "MD 저장"이
+  이미지 포함 저장(에셋 있으면 OpenDocumentTree → 문서명 폴더(-2/-3 충돌
+  회피)에 .md+상대경로 에셋, 없으면 기존 CreateDocument 유지)
+  ③settings/ReaderSettingsRepository 신설 — Aa 글자 크기(85~150% 순환,
+  WebView textZoom)와 문서별 읽기 위치(WebView 스크롤 비율 / PDF 페이지
+  인덱스+오프셋, MRU 100개) 저장. targetSdk 35는 사용자 지시로 제외.
+- 검증: gradlew test assembleDebug/Release + 에뮬레이터 스모크 전 항목 통과
+  (EXIF 세로 표시, GIF 프레임 diff로 애니메이션 확인, PDF 7페이지 복원,
+  md 스크롤 복원, Aa 100→130% 확대, MD 저장 이미지 5개+images-2 접미사,
+  release에서 DOCX 변환+GIF 재확인), FATAL 0
+- ⚠️ 새 지뢰: Downloads provider는 같은 파일에 오픈마다 다른 URI를 준다
+  (raw:↔msf: 전환) — 읽기 위치 키를 uri.toString()으로 하면 복원 실패.
+  파일명+크기 키("doc:이름:크기")로 수정함 (Claude 직접 수정 3곳).
+  RecentFilesRepository의 URI 중복 백로그도 같은 원인.
+- 보류: WebView 위치 복원이 onPageFinished+post 1회라 이미지 많은 문서는
+  높이 안정화 전에 복원될 수 있음 (리뷰 WARN — 실측에서는 문제 없었음).
+  Galaxy(Samsung My Files)에서 URI 안정성/실사용 확인은 사용자 몫.
+
 ### 2026-07-05 Claude (이미지 열기 회귀 + PDF 중앙 정렬)
 - 요지: P0-B의 2-pass 이미지 디코딩 회귀 수정 — inJustDecodeBounds 모드
   decodeStream은 성공해도 null을 반환하는데 use{} 반환값에 elvis를 걸어
@@ -123,8 +143,9 @@
    원인: VaultRepository.list()가 매 호출 root부터 경로 재해석 + 커서 이중
    순회. 개선안: documentId 캐시(path→docId, 쓰기 시 무효화).
    측정: 앱 Spike → S4 버튼 (perf/ 폴더에 파일 200개 필요).
-3. 읽기 경험 개선(dogfooding friction 순): 글꼴 크기 설정 등 사용자가 보고하는
-   순서대로.
+3. 읽기 경험 개선(dogfooding friction 순): 글자 크기(Aa)·읽기 위치·GIF/EXIF·
+   MD 저장 이미지 포함은 완료(2026-07-05). 남은 후보: 앱 이름/아이콘,
+   targetSdk 35, 사용자가 보고하는 순서대로.
 4. S3 잔여: Word/Google Docs 수동 확인 (spike/S3-MANUAL-VERIFICATION.md).
 
 ## 지뢰 (모르면 다시 밟는다)
@@ -138,6 +159,7 @@
 | connectedAndroidTest | 종료 시 앱 제거 → 볼트 설정 소실 | 테스트 후 release 재설치 + 볼트 재선택 |
 | API 35 DocumentsProvider | 자체 provider 직접 접근 SecurityException | 성능 측정은 앱 내 Spike 화면으로 (instrumentation 테스트는 @Ignore) |
 | use{}+inJustDecodeBounds | bounds 모드 decodeStream은 성공해도 null → use 반환값 elvis가 FNF 오판 | 스트림 null 체크와 디코드 결과 체크 분리 |
+| Downloads URI 불안정 | 같은 파일인데 오픈마다 raw:↔msf: 문서 ID가 바뀜 → URI 키 저장은 재오픈 시 miss | 문서 식별 키는 파일명+크기 ("doc:이름:크기") 사용 |
 | Mammoth XML 제어문자 | 불법 제어문자에 SAX crash | DocxXmlSanitizer가 전처리 (DOCTYPE 제거 포함 — XXE 방어 대체) |
 
 ## 검증 루틴 (변경 후 항상)

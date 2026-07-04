@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -29,6 +30,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -38,11 +40,16 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import dev.gold.mdvault.settings.ReaderSettingsRepository
 import dev.gold.mdvault.storage.VaultError
 import dev.gold.mdvault.ui.VaultErrorRecoveryButton
 import dev.gold.mdvault.ui.VaultErrorUi
 import dev.gold.mdvault.ui.toVaultErrorUi
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -53,17 +60,23 @@ import java.io.FileNotFoundException
  * PDF 페이지 세로 스크롤 뷰 — Android 내장 PdfRenderer 사용 (의존성 0개).
  * 페이지 비트맵은 LazyColumn이 화면 밖 항목을 폐기하며 자연 회수된다.
  */
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, FlowPreview::class)
 @Composable
 fun PdfPagesView(
     uri: Uri,
     modifier: Modifier = Modifier,
     onBack: (() -> Unit)? = null,
     onOpenVaultSetup: (() -> Unit)? = null,
+    readerSettingsRepository: ReaderSettingsRepository? = null,
+    documentKey: String = uri.toString(),
 ) {
     val context = LocalContext.current
     var error by remember(uri) { mutableStateOf<VaultErrorUi?>(null) }
     var holder by remember(uri) { mutableStateOf<PdfDocumentHolder?>(null) }
+    var restoredPositionLoaded by remember(uri, documentKey, readerSettingsRepository) {
+        mutableStateOf(readerSettingsRepository == null)
+    }
+    var restoredPosition by remember(uri, documentKey) { mutableStateOf<PdfReadingPosition?>(null) }
     var scale by remember(uri) { mutableStateOf(1f) }
     var offsetX by remember(uri) { mutableStateOf(0f) }
     var offsetY by remember(uri) { mutableStateOf(0f) }
@@ -106,6 +119,20 @@ fun PdfPagesView(
         onDispose { opened?.close() }
     }
 
+    LaunchedEffect(readerSettingsRepository, documentKey) {
+        val repository = readerSettingsRepository
+        if (repository == null) {
+            restoredPosition = null
+            restoredPositionLoaded = true
+        } else {
+            restoredPositionLoaded = false
+            restoredPosition = withContext(Dispatchers.IO) {
+                repository.readingPosition(documentKey).pdfReadingPositionOrNull()
+            }
+            restoredPositionLoaded = true
+        }
+    }
+
     when {
         error != null -> Column(modifier = Modifier.padding(24.dp)) {
             Text(
@@ -118,13 +145,50 @@ fun PdfPagesView(
                 onBackToList = onBack,
             )
         }
-        holder == null -> Text(
+        holder == null || !restoredPositionLoaded -> Text(
             text = "여는 중…",
             color = ComposeColor.White,
             modifier = Modifier.padding(24.dp),
         )
         else -> {
             val document = holder!!
+            val initialPosition = restoredPosition
+            val listState = rememberLazyListState(
+                initialFirstVisibleItemIndex = initialPosition?.index
+                    ?.coerceIn(0, (document.pageCount - 1).coerceAtLeast(0))
+                    ?: 0,
+                initialFirstVisibleItemScrollOffset = initialPosition?.offset?.coerceAtLeast(0) ?: 0,
+            )
+
+            LaunchedEffect(listState, readerSettingsRepository, documentKey) {
+                val repository = readerSettingsRepository ?: return@LaunchedEffect
+                snapshotFlow {
+                    PdfReadingPosition(
+                        index = listState.firstVisibleItemIndex,
+                        offset = listState.firstVisibleItemScrollOffset,
+                    )
+                }
+                    .debounce(PDF_POSITION_SAVE_DEBOUNCE_MS)
+                    .collect { position ->
+                        repository.saveReadingPosition(documentKey, position.toPayload())
+                    }
+            }
+
+            DisposableEffect(listState, readerSettingsRepository, documentKey) {
+                onDispose {
+                    readerSettingsRepository?.let { repository ->
+                        savePdfReadingPositionAsync(
+                            repository = repository,
+                            documentKey = documentKey,
+                            position = PdfReadingPosition(
+                                index = listState.firstVisibleItemIndex,
+                                offset = listState.firstVisibleItemScrollOffset,
+                            ),
+                        )
+                    }
+                }
+            }
+
             Box(
                 modifier = modifier
                     .fillMaxSize()
@@ -135,6 +199,7 @@ fun PdfPagesView(
                     ),
             ) {
                 LazyColumn(
+                    state = listState,
                     modifier = Modifier
                         .fillMaxSize()
                         .graphicsLayer(
@@ -186,8 +251,37 @@ private fun PdfPageItem(document: PdfDocumentHolder, pageIndex: Int) {
     }
 }
 
+private data class PdfReadingPosition(
+    val index: Int,
+    val offset: Int,
+) {
+    fun toPayload(): String = "pdf:${index.coerceAtLeast(0)}:${offset.coerceAtLeast(0)}"
+}
+
+private fun String?.pdfReadingPositionOrNull(): PdfReadingPosition? {
+    val fields = this?.split(':') ?: return null
+    if (fields.size != 3 || fields[0] != "pdf") return null
+    val index = fields[1].toIntOrNull() ?: return null
+    val offset = fields[2].toIntOrNull() ?: return null
+    if (index < 0 || offset < 0) return null
+    return PdfReadingPosition(index = index, offset = offset)
+}
+
+private fun savePdfReadingPositionAsync(
+    repository: ReaderSettingsRepository,
+    documentKey: String,
+    position: PdfReadingPosition,
+) {
+    CoroutineScope(Dispatchers.IO).launch {
+        runCatching {
+            repository.saveReadingPosition(documentKey, position.toPayload())
+        }
+    }
+}
+
 private const val TARGET_WIDTH_PX = 1440
 private const val TAG = "PdfPagesView"
+private const val PDF_POSITION_SAVE_DEBOUNCE_MS = 1_000L
 
 /** PdfRenderer는 스레드 안전이 아니므로 Mutex로 직렬화한다. */
 class PdfDocumentHolder private constructor(

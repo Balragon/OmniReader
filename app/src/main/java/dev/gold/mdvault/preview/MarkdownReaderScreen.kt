@@ -17,20 +17,23 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.compose.runtime.rememberCoroutineScope
 import dev.gold.mdvault.document.VaultDocxExporter
 import dev.gold.mdvault.markdown.MarkdownEngine
+import dev.gold.mdvault.settings.ReaderSettingsRepository
 import dev.gold.mdvault.storage.BoundedTextRead
 import dev.gold.mdvault.storage.VaultError
 import dev.gold.mdvault.storage.VaultRepository
@@ -39,11 +42,13 @@ import dev.gold.mdvault.storage.vaultDocumentSize
 import dev.gold.mdvault.ui.VaultErrorRecoveryButton
 import dev.gold.mdvault.ui.VaultErrorUi
 import dev.gold.mdvault.ui.toVaultErrorUi
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayInputStream
+import kotlin.math.roundToInt
 
 /**
  * 읽기 화면 — 앱의 핵심 동선. Markdown을 렌더링해 보여주고,
@@ -58,6 +63,7 @@ fun MarkdownReaderScreen(
     vaultRepository: VaultRepository,
     markdownEngine: MarkdownEngine,
     docxExporter: VaultDocxExporter,
+    readerSettingsRepository: ReaderSettingsRepository,
     relativePath: String,
     onEdit: () -> Unit,
     onBack: () -> Unit,
@@ -69,6 +75,7 @@ fun MarkdownReaderScreen(
     var notice by remember(relativePath) { mutableStateOf<String?>(null) }
     var noticeRecovery by remember(relativePath) { mutableStateOf<VaultErrorUi?>(null) }
     val scope = rememberCoroutineScope()
+    val fontScalePercent by readerSettingsRepository.fontScalePercent.collectAsState(initial = 100)
 
     LaunchedEffect(relativePath) {
         withContext(Dispatchers.IO) {
@@ -105,6 +112,13 @@ fun MarkdownReaderScreen(
                 modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
                 maxLines = 1,
             )
+            TextButton(onClick = {
+                scope.launch {
+                    readerSettingsRepository.setFontScalePercent(
+                        nextReaderFontScalePercent(fontScalePercent),
+                    )
+                }
+            }) { Text("Aa") }
             TextButton(onClick = {
                 notice = "DOCX 내보내는 중…"
                 noticeRecovery = null
@@ -153,6 +167,9 @@ fun MarkdownReaderScreen(
                 html = html!!,
                 baseDirectory = relativePath.substringBeforeLast('/', ""),
                 vaultRepository = vaultRepository,
+                readerSettingsRepository = readerSettingsRepository,
+                documentKey = relativePath,
+                fontScalePercent = fontScalePercent,
                 onOpenNote = onOpenNote,
             )
         }
@@ -174,10 +191,45 @@ private fun VaultWebView(
     html: String,
     baseDirectory: String,
     vaultRepository: VaultRepository,
+    readerSettingsRepository: ReaderSettingsRepository,
+    documentKey: String,
+    fontScalePercent: Int,
     onOpenNote: (String) -> Unit,
 ) {
     val context = LocalContext.current
-    key(html) {
+    var webView by remember(documentKey, html) { mutableStateOf<WebView?>(null) }
+    var pageFinished by remember(documentKey, html) { mutableStateOf(false) }
+    var restored by remember(documentKey, html) { mutableStateOf(false) }
+    var restoreRatio by remember(documentKey, html) { mutableStateOf<Float?>(null) }
+
+    LaunchedEffect(readerSettingsRepository, documentKey, html) {
+        restoreRatio = withContext(Dispatchers.IO) {
+            readerSettingsRepository.readingPosition(documentKey).webReadingRatioOrNull()
+        }
+    }
+
+    LaunchedEffect(pageFinished, restoreRatio, webView) {
+        val view = webView
+        val ratio = restoreRatio
+        if (!restored && pageFinished && view != null && ratio != null) {
+            restored = true
+            if (ratio >= WEB_RESTORE_MIN_RATIO) {
+                view.post {
+                    view.scrollTo(0, (webContentHeightPx(view) * ratio).roundToInt())
+                }
+            }
+        }
+    }
+
+    DisposableEffect(documentKey, html) {
+        onDispose {
+            webView?.let { view ->
+                saveWebReadingPositionAsync(readerSettingsRepository, documentKey, view)
+            }
+        }
+    }
+
+    key(documentKey, html) {
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
@@ -186,6 +238,7 @@ private fun VaultWebView(
                     settings.blockNetworkLoads = true
                     settings.allowFileAccess = false
                     settings.allowContentAccess = false
+                    settings.textZoom = fontScalePercent
                     webViewClient = DocumentWebViewClient(
                         context = context,
                         onOpenNote = onOpenNote,
@@ -197,8 +250,19 @@ private fun VaultWebView(
                                 }
                             }.getOrNull()
                         },
+                        onPageFinished = { view ->
+                            webView = view
+                            pageFinished = true
+                        },
                     )
+                    webView = this
                     loadDataWithBaseURL(vaultBaseUrl(baseDirectory), html, "text/html", "utf-8", null)
+                }
+            },
+            update = { view ->
+                webView = view
+                if (view.settings.textZoom != fontScalePercent) {
+                    view.settings.textZoom = fontScalePercent
                 }
             },
         )
@@ -227,6 +291,7 @@ internal class DocumentWebViewClient(
     private val context: Context,
     private val loadAsset: (String) -> ByteArray?,
     private val onOpenNote: ((String) -> Unit)? = null,
+    private val onPageFinished: ((WebView) -> Unit)? = null,
 ) : WebViewClient() {
 
     override fun shouldInterceptRequest(
@@ -256,6 +321,11 @@ internal class DocumentWebViewClient(
         return true // 뷰어는 문서 하나만 표시 — WebView 내 탐색 금지
     }
 
+    override fun onPageFinished(view: WebView, url: String?) {
+        super.onPageFinished(view, url)
+        onPageFinished?.invoke(view)
+    }
+
     private fun mimeTypeFor(path: String): String =
         when (path.substringAfterLast('.').lowercase()) {
             "png" -> "image/png"
@@ -268,3 +338,40 @@ internal class DocumentWebViewClient(
             else -> "application/octet-stream"
         }
 }
+
+internal fun nextReaderFontScalePercent(current: Int): Int {
+    val currentIndex = READER_FONT_SCALE_STEPS.indexOf(current)
+    if (currentIndex >= 0) {
+        return READER_FONT_SCALE_STEPS[(currentIndex + 1) % READER_FONT_SCALE_STEPS.size]
+    }
+    return READER_FONT_SCALE_STEPS.firstOrNull { it > current } ?: READER_FONT_SCALE_STEPS.first()
+}
+
+internal fun String?.webReadingRatioOrNull(): Float? =
+    this?.takeIf { it.startsWith("web:") }
+        ?.substringAfter("web:")
+        ?.toFloatOrNull()
+        ?.takeIf { it.isFinite() }
+        ?.coerceIn(0f, 1f)
+
+internal fun saveWebReadingPositionAsync(
+    readerSettingsRepository: ReaderSettingsRepository,
+    documentKey: String,
+    webView: WebView,
+) {
+    val ratio = (webView.scrollY.toFloat() / webContentHeightPx(webView).toFloat())
+        .coerceIn(0f, 1f)
+    CoroutineScope(Dispatchers.IO).launch {
+        runCatching {
+            readerSettingsRepository.saveReadingPosition(documentKey, "web:$ratio")
+        }
+    }
+}
+
+internal fun webContentHeightPx(webView: WebView): Int =
+    (webView.contentHeight * webView.resources.displayMetrics.density)
+        .roundToInt()
+        .coerceAtLeast(1)
+
+internal const val WEB_RESTORE_MIN_RATIO = 0.01f
+private val READER_FONT_SCALE_STEPS = listOf(85, 100, 115, 130, 150)

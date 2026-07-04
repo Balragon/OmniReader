@@ -63,6 +63,7 @@ class MainActivity : ComponentActivity() {
                             markdownEngine = container.markdownEngine,
                             docxImporter = container.docxToMarkdownImporter,
                             recentFiles = container.recentFilesRepository,
+                            readerSettingsRepository = container.readerSettingsRepository,
                             onBack = { finish() },
                         )
                     } else {
@@ -130,6 +131,7 @@ private fun MdvaultApp(container: AppContainer) {
             markdownEngine = container.markdownEngine,
             docxImporter = container.docxToMarkdownImporter,
             recentFiles = container.recentFilesRepository,
+            readerSettingsRepository = container.readerSettingsRepository,
             onBack = { viewerUriString = null },
             onOpenVaultSetup = {
                 viewerUriString = null
@@ -222,6 +224,7 @@ private fun MdvaultApp(container: AppContainer) {
                     vaultRepository = container.vaultRepository,
                     markdownEngine = container.markdownEngine,
                     docxExporter = container.vaultDocxExporter,
+                    readerSettingsRepository = container.readerSettingsRepository,
                     relativePath = path,
                     onEdit = { screen = Screen.Editor },
                     onBack = { screen = Screen.FileList },
