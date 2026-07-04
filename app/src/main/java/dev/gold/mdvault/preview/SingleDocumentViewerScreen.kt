@@ -7,12 +7,12 @@ import android.content.ContextWrapper
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.provider.OpenableColumns
+import android.view.View
 import android.webkit.WebView
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Box
@@ -39,22 +39,18 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
 import dev.gold.mdvault.document.DocumentKind
 import dev.gold.mdvault.document.DocumentTypeDetector
 import dev.gold.mdvault.document.DocxToMarkdownImporter
 import dev.gold.mdvault.markdown.MarkdownEngine
 import dev.gold.mdvault.storage.RecentFilesRepository
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -106,7 +102,6 @@ fun SingleDocumentViewerScreen(
         FullscreenImageViewer(
             uri = currentState.uri,
             displayName = displayName,
-            onBack = onBack,
         )
         return
     }
@@ -173,7 +168,6 @@ fun SingleDocumentViewerScreen(
 private fun FullscreenImageViewer(
     uri: Uri,
     displayName: String,
-    onBack: () -> Unit,
 ) {
     val context = LocalContext.current
     val view = LocalView.current
@@ -183,7 +177,6 @@ private fun FullscreenImageViewer(
     var scale by remember(uri) { mutableStateOf(1f) }
     var offsetX by remember(uri) { mutableStateOf(0f) }
     var offsetY by remember(uri) { mutableStateOf(0f) }
-    var chromeVisible by remember(uri) { mutableStateOf(true) }
     val transformableState = rememberTransformableState { zoomChange, panChange, _ ->
         val nextScale = (scale * zoomChange).coerceIn(1f, 6f)
         if (nextScale == 1f) {
@@ -201,23 +194,23 @@ private fun FullscreenImageViewer(
         if (window == null) {
             onDispose { }
         } else {
+            @Suppress("DEPRECATION")
+            val previousSystemUiVisibility = view.systemUiVisibility
             WindowCompat.setDecorFitsSystemWindows(window, false)
-            val controller = WindowCompat.getInsetsController(window, view)
-            controller.systemBarsBehavior =
-                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            controller.hide(WindowInsetsCompat.Type.systemBars())
+            @Suppress("DEPRECATION")
+            view.systemUiVisibility = View.SYSTEM_UI_FLAG_IMMERSIVE or
+                View.SYSTEM_UI_FLAG_FULLSCREEN or
+                View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+                View.SYSTEM_UI_FLAG_LAYOUT_STABLE
 
             onDispose {
-                controller.show(WindowInsetsCompat.Type.systemBars())
+                @Suppress("DEPRECATION")
+                view.systemUiVisibility = previousSystemUiVisibility
                 WindowCompat.setDecorFitsSystemWindows(window, true)
             }
         }
-    }
-
-    LaunchedEffect(uri) {
-        chromeVisible = true
-        delay(1500)
-        chromeVisible = false
     }
 
     LaunchedEffect(uri) {
@@ -239,9 +232,7 @@ private fun FullscreenImageViewer(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
-            .pointerInput(uri) {
-                detectTapGestures { chromeVisible = !chromeVisible }
-            },
+            .transformable(transformableState),
     ) {
         when {
             error != null -> Text(
@@ -269,28 +260,8 @@ private fun FullscreenImageViewer(
                         scaleY = scale,
                         translationX = offsetX,
                         translationY = offsetY,
-                    )
-                    .transformable(transformableState),
+                    ),
             )
-        }
-        if (chromeVisible) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .align(Alignment.TopStart)
-                    .background(Color(0x99000000))
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                TextButton(onClick = onBack) { Text("←") }
-                Text(
-                    text = displayName,
-                    color = Color.White,
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
-                    maxLines = 1,
-                )
-            }
         }
     }
 }
