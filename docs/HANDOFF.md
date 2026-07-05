@@ -21,6 +21,20 @@
 > - 보류: <하다 만 것, 알게 됐지만 안 고친 것 — 없으면 생략>
 > ```
 
+### 2026-07-05 Claude (앱 이름 OmniReader + 런처 아이콘)
+- 요지: 앱 이름을 "OmniReader"로 확정, 어댑티브 런처 아이콘 신설. 그동안
+  res/ 디렉토리 자체가 없어 아이콘=시스템 기본, 이름=매니페스트 하드코딩
+  "mdvault"였음. res/values/strings.xml(app_name), 어댑티브 아이콘
+  (drawable/ic_launcher_foreground·background 벡터 + mipmap-anydpi-v26/
+  ic_launcher·_round), 매니페스트에 icon/roundIcon/label 연결.
+- 아이콘 디자인: 파란 폴더 포켓이 흰 문서(접힌 모서리+텍스트 라인)를 물고,
+  포켓에 흰 O 링(OmniReader의 O). 사용자 제공 참고 이미지 기반. 전부 벡터라
+  PNG mipmap 불필요(minSdk 29 ≥ 26, 어댑티브만으로 충분).
+- 검증: 빌드 + 에뮬레이터 앱 서랍 스크린샷(원형 마스크에서 아이콘·이름 정상),
+  release FATAL 0, Galaxy 설치.
+- 보류: 테마 아이콘(monochrome 레이어)은 미추가 — 필요 시 안드로이드 13+
+  단색 아이콘용으로 나중에.
+
 ### 2026-07-05 Claude+Codex (순수 뷰어 전환 — 편집·볼트·DOCX export 완전 제거, wf_5b227a57f227)
 - 요지: 사용자가 "순수 뷰어" 방향 확정 → editor/ 패키지, 볼트(SAF tree
   브라우저: VaultRepository/SafDocumentRepository/FileList/VaultSetup/
@@ -154,10 +168,9 @@
 
 ## 다음 작업 (우선순위 순)
 
-1. **앱 이름/아이콘** — 아직 "mdvault" 기본. 제품명·런처 아이콘 필요
-   (사이드로드에서도 런처 식별에 필요).
-2. 읽기 경험 개선은 사용자가 dogfooding 중 보고하는 순서대로.
-   (글자 크기·읽기 위치·GIF/EXIF·MD 저장 이미지 포함은 2026-07-05 완료.)
+1. 읽기 경험 개선은 사용자가 dogfooding 중 보고하는 순서대로.
+   (글자 크기·읽기 위치·GIF/EXIF·MD 저장 이미지 포함은 2026-07-05 완료.
+   앱 이름 "OmniReader"·런처 아이콘도 2026-07-05 완료.)
 
 ### 하지 않기로 한 것
 - **targetSdk 35 안 올림** (2026-07-05 확정): 배포 방식이 사이드로드(APK 직접

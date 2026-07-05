@@ -1,0 +1,47 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 문서 (뒤) -->
+    <path android:pathData="M39,22 L63,22 L74,33 L74,63 Q74,68 69,68 L39,68 Q34,68 34,63 L34,27 Q34,22 39,22 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="54" android:startY="22"
+                android:endX="54" android:endY="68">
+                <item android:offset="0" android:color="#FFFFFFFF" />
+                <item android:offset="1" android:color="#FFEDF3FB" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- 접힌 모서리 -->
+    <path android:pathData="M63,22 L63,33 L74,33 Z" android:fillColor="#FFD9E3F3" />
+    <!-- 본문 텍스트 라인 -->
+    <path android:pathData="M40,33.5 h27 v3 h-27 Z" android:fillColor="#FFA9C0E6" />
+    <path android:pathData="M40,41 h29 v3 h-29 Z" android:fillColor="#FFA9C0E6" />
+    <path android:pathData="M40,48.5 h17 v3 h-17 Z" android:fillColor="#FFC4D5EE" />
+
+    <!-- 폴더 포켓 (앞) -->
+    <path android:pathData="M29,53 L79,53 Q84,53 84,58 L84,78 Q84,84 78,84 L30,84 Q24,84 24,78 L24,58 Q24,53 29,53 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="54" android:startY="52"
+                android:endX="54" android:endY="86">
+                <item android:offset="0" android:color="#FF6E9BF2" />
+                <item android:offset="1" android:color="#FF3A6ADE" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- 포켓 상단 하이라이트 -->
+    <path android:pathData="M28,56 L80,56"
+        android:strokeColor="#FFFFFFFF" android:strokeAlpha="0.16"
+        android:strokeWidth="1.6" android:strokeLineCap="round" />
+
+    <!-- O 링 -->
+    <path android:pathData="M56,70 a9,9 0 1,0 18,0 a9,9 0 1,0 -18,0 Z" android:fillColor="#FFFFFFFF" />
+    <path android:pathData="M60.7,70 a4.3,4.3 0 1,0 8.6,0 a4.3,4.3 0 1,0 -8.6,0 Z" android:fillColor="#FF4A78E4" />
+</vector>
