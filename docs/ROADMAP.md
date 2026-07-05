@@ -45,4 +45,8 @@ DOCX export를 코드째 제거. 진입은 외부 인텐트→뷰어 / 홈(파�
 **이로써 무효화된 이전 백로그:** SAF 목록 최적화(S4), S5 Samsung Keyboard,
 S3 Word/GDocs 수동 확인, 에디터 개선 — 모두 해당 코드가 없어 종료.
 
-**남은 후보:** 앱 이름/아이콘, targetSdk 35, 그 외 뷰어 dogfooding friction.
+**남은 후보:** 앱 이름/아이콘, 그 외 뷰어 dogfooding friction.
+
+**하지 않기로 한 것:** targetSdk 35 (2026-07-05) — 배포는 사이드로드(APK 직접
+설치)라 Play 스토어 정책 게이트인 35가 불필요. targetSdk 34로도 안드로이드
+15/16에 설치·동작하며, 35는 edge-to-edge 강제 등 새 동작만 떠안음.
