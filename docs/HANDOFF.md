@@ -50,6 +50,24 @@
   남고 탭→재열림 확인, 파일앱 탭 문서는 최근 미기록 확인), release FATAL 0,
   Galaxy 설치.
 
+### 2026-07-05 Claude (v1.0.0 공개 배포)
+- 요지: GitHub 저장소를 PUBLIC 전환, Release v1.0.0에 서명된 APK 첨부 →
+  누구나 사이드로드 다운로드 가능. README를 사용자용으로 재작성.
+  버전 0.1.0→1.0.0. release 빌드가 debug 서명 → **릴리스 키 서명**으로 전환.
+- ⚠️ **릴리스 서명 키 (백업 필수, 분실 시 업데이트 불가):**
+  `release.keystore`(alias=omnireader) + `keystore.properties`(비밀번호) — 둘 다
+  **gitignore, 리포에 없음, 사용자 로컬에만 존재**. build.gradle.kts가
+  keystore.properties 있으면 릴리스 키로, 없으면 debug로 폴백 서명.
+  인증서 CN=OmniReader, SHA-256 b656c3a0…52f6d16. 이 키를 잃으면 같은 앱으로
+  업데이트 못 함(사용자가 삭제 후 재설치해야 함) → 안전한 곳에 백업할 것.
+- 다음 릴리스 절차: versionCode/versionName 올림 → `./gradlew assembleRelease`
+  → `cp app-release.apk OmniReader-x.y.z.apk` → `gh release create vX.Y.Z <apk>
+  --repo Balragon/mdvault --title ... --notes ...`.
+- 공개 링크: 릴리스 https://github.com/Balragon/mdvault/releases/tag/v1.0.0 /
+  고정 다운로드 https://github.com/Balragon/mdvault/releases/latest/download/OmniReader-1.0.0.apk
+- 검증: apksigner로 릴리스 키 서명 확인, Galaxy에 릴리스-서명 APK 재설치·실행,
+  latest/download URL이 인증 없이 302→APK(application/vnd.android.package-archive).
+
 ### 2026-07-05 Claude (런처 아이콘 = 사용자 제공 3D 사진)
 - 요지: 벡터 아이콘 대신 사용자가 준 3D 렌더 사진(파란 폴더+격자 문서+O 링)을
   그대로 런처 아이콘으로 사용. drawable/ic_launcher_foreground.xml(벡터) 삭제,
