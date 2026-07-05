@@ -13,3 +13,7 @@ captures/
 !debug.keystore
 .kotlin/
 .venv/
+
+# 릴리스 서명 (비밀 — 커밋 금지, 백업 필수)
+keystore.properties
+release.keystore
