@@ -30,7 +30,7 @@
 
 Play 스토어가 아닌 **직접 설치(사이드로드)** 방식입니다.
 
-1. [최신 릴리스](https://github.com/Balragon/mdvault/releases/latest)에서 `OmniReader-x.y.z.apk`를 안드로이드 기기로 내려받습니다.
+1. [최신 릴리스](https://github.com/Balragon/OmniReader/releases/latest)에서 `OmniReader-x.y.z.apk`를 안드로이드 기기로 내려받습니다.
 2. 처음이라면 "출처를 알 수 없는 앱 설치"를 허용해야 합니다
    (설정 → 앱 → 특별한 앱 접근 → 알 수 없는 앱 설치 → 사용하는 브라우저/파일 앱 허용).
 3. 내려받은 APK를 탭해 설치합니다.
@@ -55,4 +55,7 @@ JDK 17이 필요합니다.
 - 작업 로그·현재 상태·지뢰: [docs/HANDOFF.md](docs/HANDOFF.md)
 - 로드맵: [docs/ROADMAP.md](docs/ROADMAP.md)
 
-개인 프로젝트입니다. 무상 제공되며 별도의 보증은 없습니다.
+## 라이선스
+
+[MIT License](LICENSE) — 자유롭게 사용·수정·재배포할 수 있습니다(저작권 표시 유지).
+무상 제공되며 별도의 보증은 없습니다.
