@@ -26,6 +26,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         externalUriState = externalDocumentUri(intent)
+        persistReadIfPossible(externalUriState)
         setContent {
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
@@ -53,6 +54,7 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         externalUriState = externalDocumentUri(intent)
+        persistReadIfPossible(externalUriState)
     }
 
     private fun externalDocumentUri(intent: Intent?): Uri? = when (intent?.action) {
@@ -61,6 +63,18 @@ class MainActivity : ComponentActivity() {
             @Suppress("DEPRECATION")
             intent.getParcelableExtra(Intent.EXTRA_STREAM)
         else -> null
+    }
+
+    /**
+     * 외부 인텐트로 받은 문서에 영구 읽기 권한을 시도한다. 성공하면 최근 목록에서
+     * 다시 열 수 있다(권한을 부여한 provider 한정). VIEW 그랜트가 persistable이
+     * 아니면 조용히 실패하며, 그 파일은 최근 목록에 기록되지 않는다(뷰어가 판단).
+     */
+    private fun persistReadIfPossible(uri: Uri?) {
+        if (uri == null || uri.scheme != "content") return
+        runCatching {
+            contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
     }
 }
 

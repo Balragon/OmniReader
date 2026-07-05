@@ -21,6 +21,26 @@
 > - 보류: <하다 만 것, 알게 됐지만 안 고친 것 — 없으면 생략>
 > ```
 
+### 2026-07-05 Claude (홈 UI 개편 + 최근 파일 재열기 수정)
+- 요지: ①홈 헤더를 "mdvault"→"OmniReader"(O 링 로고 마크+"문서 뷰어" 부제),
+  파란 "파일 열기" 카드, 최근 파일을 타입 배지(MD/PDF/DOC/IMG/HTM/TXT)+시간
+  카드로 개편(HomeScreen.kt 전면 재작성, 의존성 0 추가). ②최근 파일 탭이
+  안 열리던 버그 수정.
+- ⚠️ 최근 파일 근본 원인/설계 결정: 파일 앱 탭(ACTION_VIEW)으로 연 문서는
+  provider가 **일시 권한만** 부여(logcat "requires ACTION_OPEN_DOCUMENT") →
+  재실행 후 openInputStream이 SecurityException → 죽은 항목이 됐던 것.
+  수정: (a) MainActivity가 외부 인텐트 URI에 takePersistableUriPermission
+  시도(persistReadIfPossible), (b) 뷰어는 **영구 권한을 실제 보유한 문서만**
+  최근에 기록(hasPersistedReadPermission 게이트). 결과: 최근 목록은 항상
+  재열기 가능한 항목만 → 죽은 항목·"권한 만료" churn 없음.
+  **사용자 결정(2026-07-05): 파일앱 탭 문서는 최근에 안 뜨는 채로 둔다**
+  (사본 캐싱은 안 함 — 단순함 우선). 즉 최근은 앱 내 "파일 열기" 피커로
+  연 문서만 채워진다. 다운로드 provider VIEW 그랜트는 persistable 아님을
+  에뮬레이터로 확인함.
+- 검증: 빌드 + 에뮬레이터(새 홈 스샷, 피커로 연 md가 강제종료 후 최근에
+  남고 탭→재열림 확인, 파일앱 탭 문서는 최근 미기록 확인), release FATAL 0,
+  Galaxy 설치.
+
 ### 2026-07-05 Claude (앱 이름 OmniReader + 런처 아이콘)
 - 요지: 앱 이름을 "OmniReader"로 확정, 어댑티브 런처 아이콘 신설. 그동안
   res/ 디렉토리 자체가 없어 아이콘=시스템 기본, 이름=매니페스트 하드코딩
@@ -188,6 +208,7 @@
 | 이미지/PDF 뷰어 크롬 | 숨김/터치 reveal 방식은 자동화에서 컨트롤 표시가 안정적으로 잡히지 않았음 | 이미지/PDF는 같은 고정 상단 바(`←`+파일명) 사용. 이미지/PDF 본문은 검은 배경 + 화면맞춤/줌 유지 |
 | use{}+inJustDecodeBounds | bounds 모드 decodeStream은 성공해도 null → use 반환값 elvis가 FNF 오판 | 스트림 null 체크와 디코드 결과 체크 분리 (현재는 ImageDecoder로 교체) |
 | Downloads URI 불안정 | 같은 파일인데 오픈마다 raw:↔msf: 문서 ID가 바뀜 → URI 키 저장은 재오픈 시 miss | 문서 식별 키는 파일명+크기 ("doc:이름:크기") 사용 |
+| VIEW 인텐트 권한 비영구 | 파일앱 탭(ACTION_VIEW)은 일시 권한만 → 재실행 후 그 URI openInputStream이 SecurityException | 영구 권한 보유한 문서만 최근 기록. 파일앱 탭 문서는 최근에 안 남김(사용자 결정) |
 | Mammoth XML 제어문자 | 불법 제어문자에 SAX crash | DocxXmlSanitizer가 전처리 (DOCTYPE 제거 포함 — XXE 방어 대체) |
 
 ## 검증 루틴 (변경 후 항상)

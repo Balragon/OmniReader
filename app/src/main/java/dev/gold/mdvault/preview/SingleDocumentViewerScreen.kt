@@ -128,7 +128,12 @@ fun SingleDocumentViewerScreen(
                 val kind = DocumentTypeDetector.detect(name, resolver.getType(uri))
                 val loaded = loadDocument(kind, name, uri, resolver, markdownEngine, docxImporter, context.cacheDir)
                 notice = loaded.notice
-                runCatching { recentFiles.record(uri, name, kind.name) }
+                // 다시 열 수 있는(영구 권한을 가진) 문서만 최근 목록에 남긴다.
+                // 파일 앱 탭(VIEW)의 일시적 권한은 재실행 후 소멸하므로 기록하지 않아
+                // "권한 만료" 죽은 항목이 쌓이지 않는다.
+                if (resolver.hasPersistedReadPermission(uri)) {
+                    runCatching { recentFiles.record(uri, name, kind.name) }
+                }
                 loaded.state
             } catch (e: VaultError) {
                 Log.w(TAG, "Failed to open document", e)
@@ -930,6 +935,9 @@ private fun assetMimeType(path: String): String =
         "tif", "tiff" -> "image/tiff"
         else -> BINARY_MIME_TYPE
     }
+
+private fun ContentResolver.hasPersistedReadPermission(uri: Uri): Boolean =
+    uri.scheme == "content" && persistedUriPermissions.any { it.uri == uri && it.isReadPermission }
 
 private fun ContentResolver.displayNameOf(uri: Uri): String? {
     query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
