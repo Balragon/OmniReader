@@ -5,43 +5,63 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- 문서 (뒤) -->
-    <path android:pathData="M39,22 L63,22 L74,33 L74,63 Q74,68 69,68 L39,68 Q34,68 34,63 L34,27 Q34,22 39,22 Z">
+    <!-- 파일 뒤판 (파란색, 접힌 모서리) -->
+    <path android:pathData="M31,20 L71,20 L84,33 L84,58 Q84,64 78,64 L30,64 Q24,64 24,58 L24,26 Q24,20 31,20 Z">
         <aapt:attr name="android:fillColor">
             <gradient
                 android:type="linear"
-                android:startX="54" android:startY="22"
-                android:endX="54" android:endY="68">
-                <item android:offset="0" android:color="#FFFFFFFF" />
-                <item android:offset="1" android:color="#FFEDF3FB" />
+                android:startX="54" android:startY="20"
+                android:endX="54" android:endY="64">
+                <item android:offset="0" android:color="#FF5A93F0" />
+                <item android:offset="1" android:color="#FF3F76E4" />
             </gradient>
         </aapt:attr>
     </path>
-    <!-- 접힌 모서리 -->
-    <path android:pathData="M63,22 L63,33 L74,33 Z" android:fillColor="#FFD9E3F3" />
-    <!-- 본문 텍스트 라인 -->
-    <path android:pathData="M40,33.5 h27 v3 h-27 Z" android:fillColor="#FFA9C0E6" />
-    <path android:pathData="M40,41 h29 v3 h-29 Z" android:fillColor="#FFA9C0E6" />
-    <path android:pathData="M40,48.5 h17 v3 h-17 Z" android:fillColor="#FFC4D5EE" />
+    <!-- 접힌 모서리 (밝은 파랑) -->
+    <path android:pathData="M71,20 L71,33 L84,33 Z" android:fillColor="#FF9CBEF6" />
 
-    <!-- 폴더 포켓 (앞) -->
-    <path android:pathData="M29,53 L79,53 Q84,53 84,58 L84,78 Q84,84 78,84 L30,84 Q24,84 24,78 L24,58 Q24,53 29,53 Z">
+    <!-- 흰 격자 문서 -->
+    <path android:pathData="M38,34 L70,34 Q75,34 75,39 L75,61 Q75,66 70,66 L38,66 Q33,66 33,61 L33,39 Q33,34 38,34 Z">
         <aapt:attr name="android:fillColor">
             <gradient
                 android:type="linear"
-                android:startX="54" android:startY="52"
-                android:endX="54" android:endY="86">
-                <item android:offset="0" android:color="#FF6E9BF2" />
-                <item android:offset="1" android:color="#FF3A6ADE" />
+                android:startX="54" android:startY="34"
+                android:endX="54" android:endY="66">
+                <item android:offset="0" android:color="#FFFFFFFF" />
+                <item android:offset="1" android:color="#FFF3F7FD" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- 격자선 (세로) -->
+    <path android:pathData="M39,37 L39,63" android:strokeColor="#FFC6D6EE" android:strokeWidth="0.8" />
+    <path android:pathData="M45,37 L45,63" android:strokeColor="#FFC6D6EE" android:strokeWidth="0.8" />
+    <path android:pathData="M51,37 L51,63" android:strokeColor="#FFC6D6EE" android:strokeWidth="0.8" />
+    <path android:pathData="M57,37 L57,63" android:strokeColor="#FFC6D6EE" android:strokeWidth="0.8" />
+    <path android:pathData="M63,37 L63,63" android:strokeColor="#FFC6D6EE" android:strokeWidth="0.8" />
+    <path android:pathData="M69,37 L69,63" android:strokeColor="#FFC6D6EE" android:strokeWidth="0.8" />
+    <!-- 격자선 (가로) -->
+    <path android:pathData="M36,40 L72,40" android:strokeColor="#FFC6D6EE" android:strokeWidth="0.8" />
+    <path android:pathData="M36,46 L72,46" android:strokeColor="#FFC6D6EE" android:strokeWidth="0.8" />
+    <path android:pathData="M36,52 L72,52" android:strokeColor="#FFC6D6EE" android:strokeWidth="0.8" />
+
+    <!-- 폴더 포켓 (앞, 파란색) -->
+    <path android:pathData="M29,54 L79,54 Q84,54 84,59 L84,79 Q84,85 78,85 L30,85 Q24,85 24,79 L24,59 Q24,54 29,54 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="54" android:startY="54"
+                android:endX="54" android:endY="85">
+                <item android:offset="0" android:color="#FF4E88EE" />
+                <item android:offset="1" android:color="#FF3568DA" />
             </gradient>
         </aapt:attr>
     </path>
     <!-- 포켓 상단 하이라이트 -->
-    <path android:pathData="M28,56 L80,56"
+    <path android:pathData="M28,57 L80,57"
         android:strokeColor="#FFFFFFFF" android:strokeAlpha="0.16"
         android:strokeWidth="1.6" android:strokeLineCap="round" />
 
     <!-- O 링 -->
-    <path android:pathData="M56,70 a9,9 0 1,0 18,0 a9,9 0 1,0 -18,0 Z" android:fillColor="#FFFFFFFF" />
-    <path android:pathData="M60.7,70 a4.3,4.3 0 1,0 8.6,0 a4.3,4.3 0 1,0 -8.6,0 Z" android:fillColor="#FF4A78E4" />
+    <path android:pathData="M57.5,71 a8.5,8.5 0 1,0 17,0 a8.5,8.5 0 1,0 -17,0 Z" android:fillColor="#FFFFFFFF" />
+    <path android:pathData="M61.8,71 a4.2,4.2 0 1,0 8.4,0 a4.2,4.2 0 1,0 -8.4,0 Z" android:fillColor="#FF3E74DE" />
 </vector>
