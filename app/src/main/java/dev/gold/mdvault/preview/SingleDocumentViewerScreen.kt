@@ -182,6 +182,10 @@ fun SingleDocumentViewerScreen(
         return
     }
 
+    // 텍스트 문서(md/txt/html/docx)도 이미지/PDF처럼 시스템 뒤로가기를 가로채
+    // 상단 ← 와 동일하게 동작시킨다 (미가로채면 앱이 그대로 종료됨).
+    BackHandler(onBack = onBack)
+
     Column(modifier = Modifier.fillMaxSize()) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),

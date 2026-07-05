@@ -21,6 +21,15 @@
 > - 보류: <하다 만 것, 알게 됐지만 안 고친 것 — 없으면 생략>
 > ```
 
+### 2026-07-05 Claude (텍스트 문서 뒤로가기 버그 수정)
+- 요지: md/txt/html/docx 뷰어에서 시스템 뒤로가기를 누르면 홈으로 안 가고 앱이
+  종료되던 버그. 원인: 이미지/PDF는 MediaViewerScaffold의 BackHandler가 가로채는데
+  텍스트(Web) 경로엔 BackHandler가 없어 액티비티가 그대로 finish됨.
+  수정: Web 경로에도 BackHandler(onBack=onBack) 추가 → 모든 형식이 상단 ←와
+  동일하게 동작(홈에서 열면 홈 복귀, 파일앱 탭으로 열면 파일앱 복귀).
+- 검증: 에뮬레이터에서 md/docx 피커→뒤로가기=홈, 외부 docx→뒤로가기=Files 복귀
+  확인(topResumedActivity로 판정), release FATAL 0, Galaxy 설치.
+
 ### 2026-07-05 Claude (홈 UI 개편 + 최근 파일 재열기 수정)
 - 요지: ①홈 헤더를 "mdvault"→"OmniReader"(O 링 로고 마크+"문서 뷰어" 부제),
   파란 "파일 열기" 카드, 최근 파일을 타입 배지(MD/PDF/DOC/IMG/HTM/TXT)+시간
