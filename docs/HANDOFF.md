@@ -50,7 +50,20 @@
   남고 탭→재열림 확인, 파일앱 탭 문서는 최근 미기록 확인), release FATAL 0,
   Galaxy 설치.
 
-### 2026-07-05 Claude (앱 이름 OmniReader + 런처 아이콘)
+### 2026-07-05 Claude (런처 아이콘 = 사용자 제공 3D 사진)
+- 요지: 벡터 아이콘 대신 사용자가 준 3D 렌더 사진(파란 폴더+격자 문서+O 링)을
+  그대로 런처 아이콘으로 사용. drawable/ic_launcher_foreground.xml(벡터) 삭제,
+  drawable-nodpi/ic_launcher_foreground.png(512²) 신설. 어댑티브 XML은 그대로
+  이 foreground를 참조. 배경은 사진 배경색과 맞춘 solid #FFE1E6ED.
+- ⚠️ 어댑티브 마스크 잘림 방지: 원본은 폴더가 세로로 커서(≈748px/1152px) 그대로
+  쓰면 원형 마스크에 잘림. PIL로 배경색(225,230,237) 정사각 캔버스에 사진을
+  폴더 중심 기준 배치(폴더가 아이콘의 54% 차지)해 여백 확보 → 잘림 없음.
+  재생성: 스크립트는 이 커밋 참조(폴더 중심 391,615 / folder_h 748 / frac 0.54).
+  원본 사진은 리포에 없음(사용자 Desktop). 아이콘 바꾸려면 새 사진으로 동일 처리.
+- 검증: 빌드 + 에뮬레이터 앱서랍(원형 마스크에서 사진 전체 표시, 이음새 없음),
+  release FATAL 0, Galaxy 설치.
+
+### 2026-07-05 Claude (앱 이름 OmniReader + 런처 아이콘 — 벡터, 이후 사진으로 교체됨)
 - 요지: 앱 이름을 "OmniReader"로 확정, 어댑티브 런처 아이콘 신설. 그동안
   res/ 디렉토리 자체가 없어 아이콘=시스템 기본, 이름=매니페스트 하드코딩
   "mdvault"였음. res/values/strings.xml(app_name), 어댑티브 아이콘
