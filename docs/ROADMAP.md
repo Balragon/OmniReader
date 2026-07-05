@@ -33,6 +33,16 @@ S1 실패(R8 불통과 또는 광범위 crash) 시 Mammoth.js WebView sandbox �
 
 ## Phase 3 — P1 (dogfooding friction 순서대로)
 
-- ✅ DOCX export S3 승격 (reader "DOCX" 버튼, 2026-07-04 에뮬레이터+LibreOffice 검증)
-SAF 목록 조회 최적화(documentId 캐시 — S4 측정 미달분), 읽기 경험 개선(글꼴/여백/다크모드), search,
-share target, table helper, diff view — 우선순위는 dogfooding friction 순
+- ✅ P1 reader polish (2026-07-05): EXIF 회전, GIF 애니메이션, DOCX "MD 저장"
+  이미지 포함, 글자 크기(Aa), 문서별 읽기 위치.
+
+## 순수 뷰어 전환 (2026-07-05, 사용자 방향 확정)
+
+앱을 **순수 문서 뷰어**로 축소. 편집(editor/)·볼트(SAF tree 브라우저)·
+DOCX export를 코드째 제거. 진입은 외부 인텐트→뷰어 / 홈(파일 열기+최근)→뷰어뿐.
+"MD 저장"은 읽기-방향 내보내기라 유지. 상세는 docs/HANDOFF.md 작업 로그.
+
+**이로써 무효화된 이전 백로그:** SAF 목록 최적화(S4), S5 Samsung Keyboard,
+S3 Word/GDocs 수동 확인, 에디터 개선 — 모두 해당 코드가 없어 종료.
+
+**남은 후보:** 앱 이름/아이콘, targetSdk 35, 그 외 뷰어 dogfooding friction.

@@ -93,7 +93,7 @@ import kotlin.math.roundToInt
  * 탭하면 이 화면이 바로 열린다 (볼트 설정 불필요).
  *
  * - md/txt: 즉시 렌더링 (원본은 읽기만)
- * - docx: 캐시에 즉석 변환 후 렌더링, "MD 저장"으로 원할 때만 저장
+ * - docx: 캐시에 즉석 변환 후 렌더링
  * - html: JS 비활성 WebView (오프라인 — 원격 리소스 로드 안 함)
  * - 이미지: 네이티브 몰입형 화면맞춤 표시 (핀치 줌)
  * - pdf: PdfRenderer 페이지 뷰
@@ -725,6 +725,29 @@ private fun loadDocument(
         LoadedViewerDocument(ViewerState.Error(VaultErrorUi("지원하지 않는 형식입니다: $displayName")))
 }
 
+private fun File.resolveSafeAsset(relativePath: String): File {
+    val target = normalizeAssetRelativePath(relativePath).fold(this) { parent, segment ->
+        File(parent, segment)
+    }
+    val rootPath = canonicalFile.path
+    val targetPath = target.canonicalFile.path
+    if (targetPath != rootPath && !targetPath.startsWith(rootPath + File.separator)) {
+        throw IOException("이미지 경로가 올바르지 않습니다: $relativePath")
+    }
+    return target
+}
+
+private fun File.resolveSafeAssetOrNull(relativePath: String): File? =
+    runCatching { resolveSafeAsset(relativePath) }.getOrNull()
+
+private fun normalizeAssetRelativePath(relativePath: String): List<String> {
+    val segments = relativePath.split('/').filter { it.isNotBlank() }
+    require(segments.isNotEmpty() && segments.none { it == "." || it == ".." }) {
+        "이미지 경로가 올바르지 않습니다: $relativePath"
+    }
+    return segments
+}
+
 private data class MarkdownAssetSaveResult(
     val totalAssets: Int,
     val savedAssets: Int,
@@ -886,29 +909,6 @@ private fun Cursor.toSafChild(treeUri: Uri): SafChild {
         displayName = getString(getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME)).orEmpty(),
         mimeType = getString(getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_MIME_TYPE)).orEmpty(),
     )
-}
-
-private fun File.resolveSafeAsset(relativePath: String): File {
-    val target = normalizeAssetRelativePath(relativePath).fold(this) { parent, segment ->
-        File(parent, segment)
-    }
-    val rootPath = canonicalFile.path
-    val targetPath = target.canonicalFile.path
-    if (targetPath != rootPath && !targetPath.startsWith(rootPath + File.separator)) {
-        throw IOException("이미지 경로가 올바르지 않습니다: $relativePath")
-    }
-    return target
-}
-
-private fun File.resolveSafeAssetOrNull(relativePath: String): File? =
-    runCatching { resolveSafeAsset(relativePath) }.getOrNull()
-
-private fun normalizeAssetRelativePath(relativePath: String): List<String> {
-    val segments = relativePath.split('/').filter { it.isNotBlank() }
-    require(segments.isNotEmpty() && segments.none { it == "." || it == ".." }) {
-        "이미지 경로가 올바르지 않습니다: $relativePath"
-    }
-    return segments
 }
 
 private fun String.exportBaseName(): String {

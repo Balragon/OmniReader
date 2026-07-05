@@ -38,9 +38,7 @@ import java.io.FileNotFoundException
 @Composable
 fun HomeScreen(
     recentFilesRepository: RecentFilesRepository,
-    canOpenVault: Boolean,
     onOpenDocument: (Uri) -> Unit,
-    onOpenVault: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -80,13 +78,6 @@ fun HomeScreen(
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text("파일 열기")
-                }
-                Button(
-                    onClick = onOpenVault,
-                    enabled = canOpenVault,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text("내 폴더")
                 }
             }
         }

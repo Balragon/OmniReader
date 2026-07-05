@@ -60,11 +60,3 @@ internal fun InputStream.readAtMostBytes(maxBytes: Int): ByteArray {
     }
     return output.toByteArray()
 }
-
-internal suspend fun VaultRepository.vaultDocumentSize(relativePath: String): Long? {
-    val parentPath = relativePath.substringBeforeLast('/', missingDelimiterValue = "")
-    val fileName = relativePath.substringAfterLast('/')
-    return list(parentPath)
-        .firstOrNull { !it.isDirectory && it.displayName == fileName }
-        ?.size
-}
