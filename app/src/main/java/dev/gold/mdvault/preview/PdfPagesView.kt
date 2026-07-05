@@ -39,11 +39,14 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import dev.gold.mdvault.R
 import dev.gold.mdvault.settings.ReaderSettingsRepository
 import dev.gold.mdvault.storage.VaultError
 import dev.gold.mdvault.ui.VaultErrorRecoveryButton
 import dev.gold.mdvault.ui.VaultErrorUi
+import dev.gold.mdvault.ui.text
 import dev.gold.mdvault.ui.toVaultErrorUi
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -112,7 +115,7 @@ fun PdfPagesView(
             error = VaultError.ProviderUnavailable().toVaultErrorUi()
             null
         } catch (e: Exception) {
-            error = VaultErrorUi(e.message ?: e.javaClass.simpleName)
+            error = VaultErrorUi(rawMessage = e.message ?: e.javaClass.simpleName)
             null
         }
         holder = opened
@@ -135,18 +138,20 @@ fun PdfPagesView(
 
     when {
         error != null -> Column(modifier = Modifier.padding(24.dp)) {
+            val currentError = error!!
+            val message = currentError.text()
             Text(
-                text = "PDF를 열 수 없습니다: ${error!!.message}",
+                text = stringResource(R.string.viewer_open_pdf_failed, message),
                 color = ComposeColor.White,
             )
             VaultErrorRecoveryButton(
-                error = error!!,
+                error = currentError,
                 onOpenVaultSetup = onOpenVaultSetup,
                 onBackToList = onBack,
             )
         }
         holder == null || !restoredPositionLoaded -> Text(
-            text = "여는 중…",
+            text = stringResource(R.string.viewer_loading),
             color = ComposeColor.White,
             modifier = Modifier.padding(24.dp),
         )
@@ -231,10 +236,11 @@ private fun PdfPageItem(document: PdfDocumentHolder, pageIndex: Int) {
     }
 
     val rendered = bitmap
+    val pageNumber = pageIndex + 1
     if (rendered != null) {
         Image(
             bitmap = rendered.asImageBitmap(),
-            contentDescription = "페이지 ${pageIndex + 1}",
+            contentDescription = stringResource(R.string.pdf_page, pageNumber),
             modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
             contentScale = ContentScale.FillWidth,
         )
@@ -246,7 +252,7 @@ private fun PdfPageItem(document: PdfDocumentHolder, pageIndex: Int) {
                 .padding(bottom = 8.dp),
             contentAlignment = Alignment.Center,
         ) {
-            Text("페이지 ${pageIndex + 1} 렌더링 중…")
+            Text(stringResource(R.string.pdf_page_rendering, pageNumber))
         }
     }
 }
@@ -318,7 +324,7 @@ class PdfDocumentHolder private constructor(
     companion object {
         fun open(context: Context, uri: Uri): PdfDocumentHolder {
             val descriptor = context.contentResolver.openFileDescriptor(uri, "r")
-                ?: throw IllegalStateException("파일 디스크립터를 열 수 없음: $uri")
+                ?: throw IllegalStateException("Couldn't open file descriptor: $uri")
             return try {
                 PdfDocumentHolder(descriptor, PdfRenderer(descriptor))
             } catch (e: Exception) {

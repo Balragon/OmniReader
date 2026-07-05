@@ -61,11 +61,13 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import dev.gold.mdvault.R
 import dev.gold.mdvault.document.DocumentKind
 import dev.gold.mdvault.document.DocumentTypeDetector
 import dev.gold.mdvault.document.DocxToMarkdownImporter
@@ -78,6 +80,7 @@ import dev.gold.mdvault.storage.openableSize
 import dev.gold.mdvault.storage.readTextBounded
 import dev.gold.mdvault.ui.VaultErrorRecoveryButton
 import dev.gold.mdvault.ui.VaultErrorUi
+import dev.gold.mdvault.ui.text
 import dev.gold.mdvault.ui.toVaultErrorUi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -110,23 +113,33 @@ fun SingleDocumentViewerScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val defaultTitle = stringResource(R.string.viewer_default_title)
     val fontScalePercent by readerSettingsRepository.fontScalePercent.collectAsState(initial = 100)
     var state by remember(uri) { mutableStateOf<ViewerState>(ViewerState.Loading) }
-    var displayName by remember(uri) { mutableStateOf("문서") }
+    var displayName by remember(uri, defaultTitle) { mutableStateOf(defaultTitle) }
     var notice by remember(uri) { mutableStateOf<String?>(null) }
     // 읽기 위치 키. URI는 같은 파일이라도 오픈마다 바뀔 수 있어(Downloads provider가
     // raw:↔msf: 문서 ID를 오감) 파일명+크기로 식별한다.
     var documentKey by remember(uri) { mutableStateOf(uri.toString()) }
 
-    LaunchedEffect(uri) {
+    LaunchedEffect(uri, defaultTitle) {
         withContext(Dispatchers.IO) {
             state = try {
                 val resolver = context.contentResolver
-                val name = resolver.displayNameOf(uri) ?: uri.lastPathSegment ?: "문서"
+                val name = resolver.displayNameOf(uri) ?: uri.lastPathSegment ?: defaultTitle
                 displayName = name
                 documentKey = "doc:$name:${resolver.openableSize(uri) ?: -1}"
                 val kind = DocumentTypeDetector.detect(name, resolver.getType(uri))
-                val loaded = loadDocument(kind, name, uri, resolver, markdownEngine, docxImporter, context.cacheDir)
+                val loaded = loadDocument(
+                    kind = kind,
+                    displayName = name,
+                    uri = uri,
+                    resolver = resolver,
+                    context = context,
+                    markdownEngine = markdownEngine,
+                    docxImporter = docxImporter,
+                    cacheDir = context.cacheDir,
+                )
                 notice = loaded.notice
                 // 다시 열 수 있는(영구 권한을 가진) 문서만 최근 목록에 남긴다.
                 // 파일 앱 탭(VIEW)의 일시적 권한은 재실행 후 소멸하므로 기록하지 않아
@@ -151,7 +164,7 @@ fun SingleDocumentViewerScreen(
                 Log.w(TAG, "Provider unavailable while opening document", e)
                 ViewerState.Error(VaultError.ProviderUnavailable().toVaultErrorUi())
             } catch (e: Exception) {
-                ViewerState.Error(VaultErrorUi(e.message ?: e.javaClass.simpleName))
+                ViewerState.Error(VaultErrorUi(rawMessage = e.message ?: e.javaClass.simpleName))
             }
         }
     }
@@ -219,9 +232,12 @@ fun SingleDocumentViewerScreen(
                                 context.contentResolver.openOutputStream(target, "wt")!!.use { output ->
                                     output.write(savableMarkdown.toByteArray(Charsets.UTF_8))
                                 }
-                                "MD 저장 완료 (이미지는 별도 저장되지 않음)"
+                                context.getString(R.string.viewer_md_saved_no_images)
                             } catch (e: Exception) {
-                                "저장 실패: ${e.message}"
+                                context.getString(
+                                    R.string.viewer_save_failed,
+                                    e.message ?: e.javaClass.simpleName,
+                                )
                             }
                         }
                     }
@@ -235,29 +251,39 @@ fun SingleDocumentViewerScreen(
                                 val result = saveMarkdownWithAssets(
                                     resolver = context.contentResolver,
                                     targetTree = targetTree,
-                                    baseName = displayName.exportBaseName(),
+                                    baseName = displayName.exportBaseName(defaultTitle),
                                     markdown = savableMarkdown,
                                     assetRoot = docxState.assetRoot,
                                     assetRelativePaths = docxState.assetRelativePaths,
                                 )
                                 if (result.savedAssets == result.totalAssets) {
-                                    "MD 저장 완료 (이미지 ${result.savedAssets}개 포함)"
+                                    context.getString(
+                                        R.string.viewer_md_saved_images,
+                                        result.savedAssets,
+                                    )
                                 } else {
-                                    "MD 저장 완료 (이미지 ${result.savedAssets}/${result.totalAssets}개 포함)"
+                                    context.getString(
+                                        R.string.viewer_md_saved_images_partial,
+                                        result.savedAssets,
+                                        result.totalAssets,
+                                    )
                                 }
                             } catch (e: Exception) {
-                                "저장 실패: ${e.message ?: e.javaClass.simpleName}"
+                                context.getString(
+                                    R.string.viewer_save_failed,
+                                    e.message ?: e.javaClass.simpleName,
+                                )
                             }
                         }
                     }
                 }
                 TextButton(onClick = {
                     if (docxState.assetRelativePaths.isEmpty()) {
-                        markdownSaveLauncher.launch(displayName.exportBaseName() + ".md")
+                        markdownSaveLauncher.launch(displayName.exportBaseName(defaultTitle) + ".md")
                     } else {
                         packageSaveLauncher.launch(null)
                     }
-                }) { Text("MD 저장") }
+                }) { Text(stringResource(R.string.viewer_save_md)) }
             }
         }
         notice?.let {
@@ -268,9 +294,13 @@ fun SingleDocumentViewerScreen(
             )
         }
         when (currentState) {
-            ViewerState.Loading -> Text("여는 중…", modifier = Modifier.padding(24.dp))
+            ViewerState.Loading -> Text(
+                text = stringResource(R.string.viewer_loading),
+                modifier = Modifier.padding(24.dp),
+            )
             is ViewerState.Error -> Column(modifier = Modifier.padding(24.dp)) {
-                Text(text = "문서를 열 수 없습니다: ${currentState.error.message}")
+                val message = currentState.error.text()
+                Text(text = stringResource(R.string.viewer_open_document_failed, message))
                 VaultErrorRecoveryButton(
                     error = currentState.error,
                     onOpenVaultSetup = onOpenVaultSetup,
@@ -457,9 +487,9 @@ private fun FullscreenImageContent(
                 error = VaultError.ProviderUnavailable().toVaultErrorUi()
             } catch (e: ImageDecoder.DecodeException) {
                 Log.w(TAG, "Failed to decode image", e)
-                error = VaultErrorUi("이미지를 디코딩할 수 없습니다")
+                error = VaultErrorUi(messageRes = R.string.viewer_image_decode_failed)
             } catch (e: Exception) {
-                error = VaultErrorUi(e.message ?: e.javaClass.simpleName)
+                error = VaultErrorUi(rawMessage = e.message ?: e.javaClass.simpleName)
             }
         }
 
@@ -471,8 +501,9 @@ private fun FullscreenImageContent(
                     .padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
+                val message = error!!.text()
                 Text(
-                    text = "이미지를 열 수 없습니다: ${error!!.message}",
+                    text = stringResource(R.string.viewer_open_image_failed, message),
                     color = Color.White,
                 )
                 VaultErrorRecoveryButton(
@@ -482,7 +513,7 @@ private fun FullscreenImageContent(
                 )
             }
             currentImage == null -> Text(
-                text = "여는 중…",
+                text = stringResource(R.string.viewer_loading),
                 color = Color.White,
                 modifier = Modifier
                     .align(Alignment.Center)
@@ -660,6 +691,7 @@ private fun loadDocument(
     displayName: String,
     uri: Uri,
     resolver: ContentResolver,
+    context: Context,
     markdownEngine: MarkdownEngine,
     docxImporter: DocxToMarkdownImporter,
     cacheDir: File,
@@ -671,7 +703,7 @@ private fun loadDocument(
         // 단일 문서 권한이라 옆의 상대경로 이미지는 접근 불가 — placeholder로 남는다
         LoadedViewerDocument(
             state = ViewerState.Web(PreviewHtmlBuilder.build(markdownEngine.toHtml(markdown.text)), { null }),
-            notice = markdown.truncationNotice(),
+            notice = markdown.truncationNotice(context),
         )
     }
 
@@ -679,7 +711,7 @@ private fun loadDocument(
         val text = resolver.readTextPreview(uri)
         LoadedViewerDocument(
             state = ViewerState.Web(PreviewHtmlBuilder.build("<pre>${text.text.escapeHtml()}</pre>"), { null }),
-            notice = text.truncationNotice(),
+            notice = text.truncationNotice(context),
         )
     }
 
@@ -688,7 +720,7 @@ private fun loadDocument(
         val html = resolver.readTextPreview(uri)
         LoadedViewerDocument(
             state = ViewerState.Web(html.text, { null }),
-            notice = html.truncationNotice(),
+            notice = html.truncationNotice(context),
         )
     }
 
@@ -700,7 +732,9 @@ private fun loadDocument(
         val size = resolver.openableSize(uri)
         if (size != null && size > DOCX_IMPORT_MAX_BYTES) {
             LoadedViewerDocument(
-                ViewerState.Error(VaultErrorUi("DOCX 파일이 너무 커서 변환할 수 없습니다 (50MB 초과)")),
+                ViewerState.Error(
+                    VaultErrorUi(rawMessage = context.getString(R.string.viewer_docx_too_large)),
+                ),
             )
         } else {
             val digest = MessageDigest.getInstance("SHA-256")
@@ -731,7 +765,16 @@ private fun loadDocument(
     }
 
     DocumentKind.UNSUPPORTED ->
-        LoadedViewerDocument(ViewerState.Error(VaultErrorUi("지원하지 않는 형식입니다: $displayName")))
+        LoadedViewerDocument(
+            ViewerState.Error(
+                VaultErrorUi(
+                    rawMessage = context.getString(
+                        R.string.viewer_unsupported_format,
+                        displayName.ifBlank { context.getString(R.string.viewer_default_title) },
+                    ),
+                ),
+            ),
+        )
 }
 
 private fun File.resolveSafeAsset(relativePath: String): File {
@@ -741,7 +784,7 @@ private fun File.resolveSafeAsset(relativePath: String): File {
     val rootPath = canonicalFile.path
     val targetPath = target.canonicalFile.path
     if (targetPath != rootPath && !targetPath.startsWith(rootPath + File.separator)) {
-        throw IOException("이미지 경로가 올바르지 않습니다: $relativePath")
+        throw IOException("Invalid image path: $relativePath")
     }
     return target
 }
@@ -752,7 +795,7 @@ private fun File.resolveSafeAssetOrNull(relativePath: String): File? =
 private fun normalizeAssetRelativePath(relativePath: String): List<String> {
     val segments = relativePath.split('/').filter { it.isNotBlank() }
     require(segments.isNotEmpty() && segments.none { it == "." || it == ".." }) {
-        "이미지 경로가 올바르지 않습니다: $relativePath"
+        "Invalid image path: $relativePath"
     }
     return segments
 }
@@ -791,10 +834,10 @@ private fun saveMarkdownWithAssets(
         exportDirectory.uri,
         MARKDOWN_MIME_TYPE,
         "${exportDirectory.displayName}.md",
-    ) ?: throw IOException("MD 파일을 만들 수 없습니다")
+    ) ?: throw IOException("Couldn't create the MD file")
     resolver.openOutputStream(markdownUri, "wt")?.use { output ->
         output.write(markdown.toByteArray(Charsets.UTF_8))
-    } ?: throw IOException("MD 파일을 쓸 수 없습니다")
+    } ?: throw IOException("Couldn't write the MD file")
 
     val assetPaths = assetRelativePaths.distinct()
     var savedAssets = 0
@@ -834,7 +877,7 @@ private fun createUniqueSafDirectory(
                 parentUri,
                 DocumentsContract.Document.MIME_TYPE_DIR,
                 candidate,
-            ) ?: throw IOException("저장 폴더를 만들 수 없습니다")
+            ) ?: throw IOException("Couldn't create the save folder")
             return CreatedSafDirectory(uri = uri, displayName = candidate)
         }
         index += 1
@@ -856,12 +899,12 @@ private fun writeAssetDocument(
         parentUri,
         assetMimeType(fileName),
         fileName,
-    ) ?: throw IOException("이미지 파일을 만들 수 없습니다: $relativePath")
+    ) ?: throw IOException("Couldn't create the image file: $relativePath")
     resolver.openOutputStream(assetUri, "w")?.use { output ->
         source.inputStream().use { input ->
             input.copyTo(output)
         }
-    } ?: throw IOException("이미지 파일을 쓸 수 없습니다: $relativePath")
+    } ?: throw IOException("Couldn't write the image file: $relativePath")
 }
 
 private fun ensureSafDirectories(
@@ -879,9 +922,9 @@ private fun ensureSafDirectories(
                 parentUri,
                 DocumentsContract.Document.MIME_TYPE_DIR,
                 segment,
-            ) ?: throw IOException("이미지 폴더를 만들 수 없습니다: $segment")
+            ) ?: throw IOException("Couldn't create the image folder: $segment")
             existing.mimeType == DocumentsContract.Document.MIME_TYPE_DIR -> existing.uri
-            else -> throw IOException("이미지 폴더 경로가 파일과 충돌합니다: $segment")
+            else -> throw IOException("Image folder path conflicts with a file: $segment")
         }
     }
     return parentUri
@@ -907,7 +950,7 @@ private fun querySafChildren(
         while (cursor.moveToNext()) {
             children += cursor.toSafChild(treeUri)
         }
-    } ?: throw IOException("대상 폴더를 읽을 수 없습니다")
+    } ?: throw IOException("Couldn't read the target folder")
     return children
 }
 
@@ -920,12 +963,12 @@ private fun Cursor.toSafChild(treeUri: Uri): SafChild {
     )
 }
 
-private fun String.exportBaseName(): String {
+private fun String.exportBaseName(fallback: String): String {
     val baseName = substringBeforeLast('.', this)
         .trim()
         .replace('/', '_')
         .replace('\\', '_')
-    return baseName.ifBlank { "문서" }
+    return baseName.ifBlank { fallback }
 }
 
 private fun assetMimeType(path: String): String =
@@ -957,8 +1000,8 @@ private fun ContentResolver.readTextPreview(uri: Uri): BoundedTextRead =
     openInputStream(uri)?.use { it.readTextBounded(TEXT_PREVIEW_MAX_BYTES, openableSize(uri)) }
         ?: throw FileNotFoundException("$uri")
 
-private fun BoundedTextRead.truncationNotice(): String? =
-    if (truncated) LARGE_TEXT_NOTICE else null
+private fun BoundedTextRead.truncationNotice(context: Context): String? =
+    if (truncated) context.getString(R.string.viewer_text_truncated) else null
 
 private fun decodeFullscreenImage(
     resolver: ContentResolver,
@@ -1000,7 +1043,7 @@ private fun ImageDecoder.configureForViewer(
 ) {
     val size = info.size
     if (size.width <= 0 || size.height <= 0) {
-        throw IllegalArgumentException("이미지 정보를 읽을 수 없습니다")
+        throw IllegalArgumentException("Couldn't read the image info")
     }
     setTargetSampleSize(calculateInSampleSize(size.width, size.height, targetWidthPx, targetHeightPx))
     if (useSoftwareAllocator) {
@@ -1046,7 +1089,6 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
 private const val TEXT_PREVIEW_MAX_BYTES = 4 * 1024 * 1024
 private const val DOCX_IMPORT_MAX_BYTES = 50L * 1024L * 1024L
 private const val IMAGE_SCREEN_MULTIPLIER = 2
-private const val LARGE_TEXT_NOTICE = "파일이 너무 커서 앞부분만 표시합니다"
 private const val MARKDOWN_MIME_TYPE = "text/markdown"
 private const val BINARY_MIME_TYPE = "application/octet-stream"
 private const val TAG = "SingleDocumentViewer"

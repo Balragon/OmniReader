@@ -50,6 +50,21 @@
   남고 탭→재열림 확인, 파일앱 탭 문서는 최근 미기록 확인), release FATAL 0,
   Galaxy 설치.
 
+### 2026-07-05 Claude+Codex (다국어 지원 — 영어 기본 + 한국어, wf_e088d49e7929)
+- 요지: UI 문자열을 리소스화해 **기기 언어를 자동으로 따르도록** 함. 그 전엔
+  전부 한국어 하드코딩. res/values/strings.xml(영어=기본, 비한국어 기기용) +
+  res/values-ko/strings.xml(한국어). 36개 키(app_name 포함), ko는 35개(app_name 제외).
+- 배선: Composable은 stringResource(R.string.…); 비-Composable은 context.getString.
+  loadDocument()·relativeTime()에 context 파라미터 추가. VaultErrorUi를
+  해석 문자열 대신 **@StringRes messageRes + rawMessage 폴백**으로 리팩터,
+  표시 시점에 VaultErrorUi.text()(@Composable)로 해석.
+- ⚠️ 깊은 SAF/디코드 예외 메시지는 영어 리터럴로 통일(사용자에겐 지역화된
+  상위 메시지만 보이고, 이 detail은 로그/희귀 케이스용). 새 문자열은 두 파일
+  모두에 같은 key로 추가할 것(키 불일치 시 런타임 누락).
+- 검증: 빌드+테스트, 에뮬레이터에서 `cmd locale set-app-locales dev.gold.mdvault
+  --locales en-US|ko-KR`로 홈·뷰어 양쪽 언어 전환 확인(영어 "Open file"/"Save as MD",
+  한국어 "파일 열기"/"MD 저장"), release FATAL 0. Galaxy 설치는 재연결 시.
+
 ### 2026-07-05 Claude (v1.0.0 공개 배포)
 - 요지: GitHub 저장소를 PUBLIC 전환, Release v1.0.0에 서명된 APK 첨부 →
   누구나 사이드로드 다운로드 가능. README를 사용자용으로 재작성.

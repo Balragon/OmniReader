@@ -1,8 +1,11 @@
 package dev.gold.mdvault.ui
 
+import androidx.annotation.StringRes
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.res.stringResource
+import dev.gold.mdvault.R
 import dev.gold.mdvault.storage.VaultError
 
 internal enum class VaultErrorRecovery {
@@ -11,27 +14,32 @@ internal enum class VaultErrorRecovery {
 }
 
 internal data class VaultErrorUi(
-    val message: String,
+    @StringRes val messageRes: Int? = null,
+    val rawMessage: String? = null,
     val recovery: VaultErrorRecovery? = null,
 )
 
 internal fun VaultError.toVaultErrorUi(): VaultErrorUi =
     when (this) {
         is VaultError.PermissionLost -> VaultErrorUi(
-            message = "폴더 접근 권한이 사라졌습니다",
+            messageRes = R.string.error_permission_lost,
             recovery = VaultErrorRecovery.OpenVaultSetup,
         )
         is VaultError.DocumentMissing -> VaultErrorUi(
-            message = "파일이 이동 되었거나 삭제되었습니다",
+            messageRes = R.string.error_document_missing,
             recovery = VaultErrorRecovery.BackToList,
         )
         is VaultError.ProviderUnavailable -> VaultErrorUi(
-            message = "저장소가 응답하지 않습니다. 잠시 후 다시 시도하세요",
+            messageRes = R.string.error_provider_unavailable,
         )
         is VaultError.Unknown -> VaultErrorUi(
-            message = "저장소 작업 중 문제가 발생했습니다",
+            messageRes = R.string.error_unknown,
         )
     }
+
+@Composable
+internal fun VaultErrorUi.text(): String =
+    messageRes?.let { stringResource(it) } ?: rawMessage ?: ""
 
 @Composable
 internal fun VaultErrorRecoveryButton(
@@ -43,14 +51,14 @@ internal fun VaultErrorRecoveryButton(
         VaultErrorRecovery.OpenVaultSetup -> {
             if (onOpenVaultSetup != null) {
                 TextButton(onClick = onOpenVaultSetup) {
-                    Text("폴더 다시 선택")
+                    Text(stringResource(R.string.recovery_reselect_folder))
                 }
             }
         }
         VaultErrorRecovery.BackToList -> {
             if (onBackToList != null) {
                 TextButton(onClick = onBackToList) {
-                    Text("목록으로")
+                    Text(stringResource(R.string.recovery_back_to_list))
                 }
             }
         }

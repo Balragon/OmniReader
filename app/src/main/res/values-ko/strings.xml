@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="home_subtitle">문서 뷰어</string>
+    <string name="home_open_file">파일 열기</string>
+    <string name="home_open_hint">기기의 문서를 열어 읽기</string>
+    <string name="home_recent">최근 파일</string>
+    <string name="home_recent_empty_title">최근에 연 파일이 없습니다</string>
+    <string name="home_recent_empty_hint">\"파일 열기\"로 문서를 열면 여기에 쌓입니다</string>
+    <string name="home_recent_permission_expired">권한이 만료되어 목록에서 제거했습니다</string>
+    <string name="home_open_failed">파일을 열 수 없습니다</string>
+    <string name="time_just_now">방금</string>
+    <string name="time_minutes_ago">%d분 전</string>
+    <string name="time_hours_ago">%d시간 전</string>
+    <string name="time_days_ago">%d일 전</string>
+    <string name="time_long_ago">오래 전</string>
+    <string name="viewer_loading">여는 중…</string>
+    <string name="viewer_default_title">문서</string>
+    <string name="viewer_save_md">MD 저장</string>
+    <string name="viewer_md_saved_no_images">MD 저장 완료 (이미지는 별도 저장되지 않음)</string>
+    <string name="viewer_md_saved_images">MD 저장 완료 (이미지 %d개 포함)</string>
+    <string name="viewer_md_saved_images_partial">MD 저장 완료 (이미지 %1$d/%2$d개 포함)</string>
+    <string name="viewer_save_failed">저장 실패: %s</string>
+    <string name="viewer_open_document_failed">문서를 열 수 없습니다: %s</string>
+    <string name="viewer_open_image_failed">이미지를 열 수 없습니다: %s</string>
+    <string name="viewer_open_pdf_failed">PDF를 열 수 없습니다: %s</string>
+    <string name="viewer_image_decode_failed">이미지를 디코딩할 수 없습니다</string>
+    <string name="viewer_docx_too_large">DOCX 파일이 너무 커서 변환할 수 없습니다 (50MB 초과)</string>
+    <string name="viewer_unsupported_format">지원하지 않는 형식입니다: %s</string>
+    <string name="viewer_text_truncated">파일이 너무 커서 앞부분만 표시합니다</string>
+    <string name="pdf_page">페이지 %d</string>
+    <string name="pdf_page_rendering">페이지 %d 렌더링 중…</string>
+    <string name="error_permission_lost">폴더 접근 권한이 사라졌습니다</string>
+    <string name="error_document_missing">파일이 이동 되었거나 삭제되었습니다</string>
+    <string name="error_provider_unavailable">저장소가 응답하지 않습니다. 잠시 후 다시 시도하세요</string>
+    <string name="error_unknown">저장소 작업 중 문제가 발생했습니다</string>
+    <string name="recovery_reselect_folder">폴더 다시 선택</string>
+    <string name="recovery_back_to_list">목록으로</string>
+</resources>

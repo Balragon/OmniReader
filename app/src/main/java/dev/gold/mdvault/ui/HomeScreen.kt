@@ -1,5 +1,6 @@
 package dev.gold.mdvault.ui
 
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -34,10 +35,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.gold.mdvault.R
 import dev.gold.mdvault.storage.RecentFilesRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -101,7 +104,7 @@ fun HomeScreen(
 
         item {
             Text(
-                text = "최근 파일",
+                text = stringResource(R.string.home_recent),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Medium,
                 color = ScreenText,
@@ -127,9 +130,9 @@ fun HomeScreen(
                                 onOpenDocument(uri)
                             } catch (e: SecurityException) {
                                 recentFilesRepository.remove(entry.uri)
-                                notice = "권한이 만료되어 목록에서 제거했습니다"
+                                notice = context.getString(R.string.home_recent_permission_expired)
                             } catch (e: Exception) {
-                                notice = "파일을 열 수 없습니다"
+                                notice = context.getString(R.string.home_open_failed)
                             }
                         }
                     },
@@ -163,13 +166,13 @@ private fun BrandHeader() {
         }
         Column {
             Text(
-                text = "OmniReader",
+                text = stringResource(R.string.app_name),
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.SemiBold,
                 color = ScreenText,
             )
             Text(
-                text = "문서 뷰어",
+                text = stringResource(R.string.home_subtitle),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MutedText,
             )
@@ -203,13 +206,13 @@ private fun OpenFileButton(
         }
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = "파일 열기",
+                text = stringResource(R.string.home_open_file),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Medium,
                 color = Color.White,
             )
             Text(
-                text = "기기의 문서를 열어 읽기",
+                text = stringResource(R.string.home_open_hint),
                 style = MaterialTheme.typography.bodyMedium,
                 color = Color.White.copy(alpha = 0.85f),
             )
@@ -229,12 +232,12 @@ private fun EmptyRecent() {
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         Text(
-            text = "최근에 연 파일이 없습니다",
+            text = stringResource(R.string.home_recent_empty_title),
             style = MaterialTheme.typography.bodyLarge,
             color = ScreenText,
         )
         Text(
-            text = "\"파일 열기\"로 문서를 열면 여기에 쌓입니다",
+            text = stringResource(R.string.home_recent_empty_hint),
             style = MaterialTheme.typography.bodySmall,
             color = MutedText,
         )
@@ -247,6 +250,7 @@ private fun RecentFileCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val context = LocalContext.current
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -267,7 +271,7 @@ private fun RecentFileCard(
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = relativeTime(entry.openedAtMillis),
+                text = relativeTime(context, entry.openedAtMillis),
                 style = MaterialTheme.typography.bodySmall,
                 color = MutedText,
             )
@@ -304,17 +308,17 @@ private fun badgeFor(kind: String): Pair<String, Color> = when (kind) {
     else -> "FILE" to Color(0xFF6B7383)
 }
 
-private fun relativeTime(openedAtMillis: Long): String {
+private fun relativeTime(context: Context, openedAtMillis: Long): String {
     val elapsedMillis = (System.currentTimeMillis() - openedAtMillis).coerceAtLeast(0)
     val minute = 60_000L
     val hour = 60 * minute
     val day = 24 * hour
     return when {
-        elapsedMillis < minute -> "방금"
-        elapsedMillis < hour -> "${elapsedMillis / minute}분 전"
-        elapsedMillis < day -> "${elapsedMillis / hour}시간 전"
-        elapsedMillis < 7 * day -> "${elapsedMillis / day}일 전"
-        else -> "오래 전"
+        elapsedMillis < minute -> context.getString(R.string.time_just_now)
+        elapsedMillis < hour -> context.getString(R.string.time_minutes_ago, elapsedMillis / minute)
+        elapsedMillis < day -> context.getString(R.string.time_hours_ago, elapsedMillis / hour)
+        elapsedMillis < 7 * day -> context.getString(R.string.time_days_ago, elapsedMillis / day)
+        else -> context.getString(R.string.time_long_ago)
     }
 }
 

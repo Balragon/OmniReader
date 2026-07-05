@@ -1,4 +1,39 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">OmniReader</string>
+    <string name="home_subtitle">Document viewer</string>
+    <string name="home_open_file">Open file</string>
+    <string name="home_open_hint">Open a document on your device</string>
+    <string name="home_recent">Recent files</string>
+    <string name="home_recent_empty_title">No recent files</string>
+    <string name="home_recent_empty_hint">Documents you open with \"Open file\" show up here</string>
+    <string name="home_recent_permission_expired">Access expired — removed from the list</string>
+    <string name="home_open_failed">Couldn\'t open the file</string>
+    <string name="time_just_now">just now</string>
+    <string name="time_minutes_ago">%d min ago</string>
+    <string name="time_hours_ago">%d hr ago</string>
+    <string name="time_days_ago">%d days ago</string>
+    <string name="time_long_ago">a while ago</string>
+    <string name="viewer_loading">Opening…</string>
+    <string name="viewer_default_title">Document</string>
+    <string name="viewer_save_md">Save as MD</string>
+    <string name="viewer_md_saved_no_images">Saved as MD (images not included)</string>
+    <string name="viewer_md_saved_images">Saved as MD (%d images included)</string>
+    <string name="viewer_md_saved_images_partial">Saved as MD (%1$d/%2$d images included)</string>
+    <string name="viewer_save_failed">Save failed: %s</string>
+    <string name="viewer_open_document_failed">Couldn\'t open the document: %s</string>
+    <string name="viewer_open_image_failed">Couldn\'t open the image: %s</string>
+    <string name="viewer_open_pdf_failed">Couldn\'t open the PDF: %s</string>
+    <string name="viewer_image_decode_failed">Couldn\'t decode the image</string>
+    <string name="viewer_docx_too_large">This DOCX is too large to convert (over 50MB)</string>
+    <string name="viewer_unsupported_format">Unsupported format: %s</string>
+    <string name="viewer_text_truncated">File is large — showing the beginning only</string>
+    <string name="pdf_page">Page %d</string>
+    <string name="pdf_page_rendering">Rendering page %d…</string>
+    <string name="error_permission_lost">Folder access permission was lost</string>
+    <string name="error_document_missing">The file was moved or deleted</string>
+    <string name="error_provider_unavailable">Storage isn\'t responding. Try again shortly</string>
+    <string name="error_unknown">Something went wrong accessing storage</string>
+    <string name="recovery_reselect_folder">Choose folder again</string>
+    <string name="recovery_back_to_list">Back to list</string>
 </resources>
