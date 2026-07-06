@@ -24,7 +24,7 @@
 - 에뮬레이터: `~/Library/Android/sdk/emulator/emulator -avd mdvault-api34`
   (headless: `-no-window -no-audio -no-boot-anim`).
   adb: `~/Library/Android/sdk/platform-tools/adb`.
-- 실기기 Galaxy S21 Ultra 시리얼 `REDACTED` (연결 시).
+- 실기기 Galaxy S21 Ultra (연결 시). 시리얼은 `adb devices`로 확인하고,
   기기 복수 연결 시 `ANDROID_SERIAL`로 지정.
 - mammoth는 Maven 원본이 아니라 **패치된 로컬 jar**
   (`app/libs/mammoth-1.9.0-android.jar`)를 쓴다 — 절대 catalog 의존성으로
