@@ -77,9 +77,9 @@
   업데이트 못 함(사용자가 삭제 후 재설치해야 함) → 안전한 곳에 백업할 것.
 - 다음 릴리스 절차: versionCode/versionName 올림 → `./gradlew assembleRelease`
   → `cp app-release.apk OmniReader-x.y.z.apk` → `gh release create vX.Y.Z <apk>
-  --repo Balragon/mdvault --title ... --notes ...`.
-- 공개 링크: 릴리스 https://github.com/Balragon/mdvault/releases/tag/v1.0.0 /
-  고정 다운로드 https://github.com/Balragon/mdvault/releases/latest/download/OmniReader-1.0.0.apk
+  --repo Balragon/OmniReader --title ... --notes ...`.
+- 공개 링크: 릴리스 https://github.com/Balragon/OmniReader/releases/tag/v1.0.0 /
+  고정 다운로드 https://github.com/Balragon/OmniReader/releases/latest/download/OmniReader-1.0.0.apk
 - 검증: apksigner로 릴리스 키 서명 확인, Galaxy에 릴리스-서명 APK 재설치·실행,
   latest/download URL이 인증 없이 302→APK(application/vnd.android.package-archive).
 
