@@ -35,6 +35,8 @@ S1 실패(R8 불통과 또는 광범위 crash) 시 Mammoth.js WebView sandbox �
 
 - ✅ P1 reader polish (2026-07-05): EXIF 회전, GIF 애니메이션, DOCX "MD 저장"
   이미지 포함, 글자 크기(Aa), 문서별 읽기 위치.
+- ✅ JSON/CSV reader support (2026-07-10): JSON 들여쓰기, CSV 표 렌더링,
+  파일 선택기·외부 VIEW/SEND 연결.
 
 ## 순수 뷰어 전환 (2026-07-05, 사용자 방향 확정)
 

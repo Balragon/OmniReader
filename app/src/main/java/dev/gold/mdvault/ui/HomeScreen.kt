@@ -305,6 +305,8 @@ private fun badgeFor(kind: String): Pair<String, Color> = when (kind) {
     "HTML" -> "HTM" to Color(0xFF8A5CD6)
     "MARKDOWN" -> "MD" to BrandBlue
     "PLAIN_TEXT" -> "TXT" to Color(0xFF6B7383)
+    "JSON" -> "JSON" to Color(0xFFE07A32)
+    "CSV" -> "CSV" to Color(0xFF1B8A73)
     else -> "FILE" to Color(0xFF6B7383)
 }
 
@@ -326,6 +328,12 @@ private val VIEWER_MIME_TYPES = arrayOf(
     "text/markdown",
     "text/plain",
     "text/html",
+    "application/json",
+    "application/ld+json",
+    "text/json",
+    "text/csv",
+    "text/comma-separated-values",
+    "application/csv",
     "application/pdf",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "image/*",

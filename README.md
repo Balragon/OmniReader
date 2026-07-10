@@ -14,6 +14,8 @@ It just opens documents and lets you read them.
 |--------|----------|
 | Markdown (`.md`) | Rendered with formatting |
 | Text (`.txt`) | Shown as-is |
+| JSON (`.json`) | Valid JSON is formatted with readable indentation; malformed content falls back to raw text |
+| CSV (`.csv`) | Displayed as a scrollable table, including quoted commas, multiline cells, UTF-8, and Korean Excel encoding |
 | HTML (`.html`) | Displayed with JavaScript and network disabled (offline) |
 | PDF | Built-in renderer, page scrolling + pinch zoom |
 | Images (`.png .jpg .webp .gif`) | Fit-to-screen, pinch zoom, EXIF rotation, animated GIF |

@@ -15,6 +15,8 @@ class PreviewHtmlBuilderTest {
         assertTrue(html.contains("viewport"))
         assertTrue(html.contains("keep-all"))
         assertTrue(html.contains("prefers-color-scheme: dark"))
+        assertTrue(html.contains(".csv-scroll"))
+        assertTrue(html.contains(".csv-row-number"))
         assertFalse("reader shell must not contain script tags", html.contains("<script"))
     }
 

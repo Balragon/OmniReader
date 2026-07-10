@@ -33,6 +33,17 @@ object PreviewHtmlBuilder {
         table { border-collapse: collapse; margin: 1em 0; display: block; overflow-x: auto; }
         th, td { border: 1px solid #999; padding: 6px 10px; }
         th { background: rgba(127,127,127,0.15); }
+        .csv-scroll { max-width: 100%; margin: 1em 0; overflow-x: auto; }
+        .csv-table { display: table; width: max-content; min-width: 100%; margin: 0; }
+        .csv-table td { min-width: 7em; max-width: 32em; white-space: pre-wrap; vertical-align: top; }
+        .csv-row-number {
+            position: sticky;
+            left: 0;
+            z-index: 1;
+            min-width: 2.5em;
+            text-align: right;
+            background: #eeeeee;
+        }
         pre { background: rgba(127,127,127,0.12); padding: 12px; border-radius: 8px; overflow-x: auto; }
         code { font-family: monospace; font-size: 0.9em; }
         blockquote { border-left: 4px solid #999; margin: 1em 0; padding: 0.1px 1em; opacity: 0.85; }
@@ -41,6 +52,7 @@ object PreviewHtmlBuilder {
             body { background: #121212; color: #e4e4e4; }
             a { color: #7aa7f0; }
             th, td { border-color: #555; }
+            .csv-row-number { background: #2b2b2b; }
         }
         </style>
         </head>

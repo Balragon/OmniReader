@@ -7,6 +7,8 @@ package dev.gold.mdvault.document
 enum class DocumentKind {
     MARKDOWN,
     PLAIN_TEXT,
+    JSON,
+    CSV,
     DOCX,
     HTML,
     PDF,
@@ -20,21 +22,27 @@ object DocumentTypeDetector {
         val extension = displayName?.substringAfterLast('.', "")?.lowercase().orEmpty()
         when (extension) {
             "md", "markdown" -> return DocumentKind.MARKDOWN
+            "json" -> return DocumentKind.JSON
+            "csv" -> return DocumentKind.CSV
             "docx" -> return DocumentKind.DOCX
             "html", "htm" -> return DocumentKind.HTML
             "pdf" -> return DocumentKind.PDF
             "png", "jpg", "jpeg", "webp", "gif", "bmp" -> return DocumentKind.IMAGE
             "txt", "log" -> return DocumentKind.PLAIN_TEXT
         }
-        return when (mimeType?.substringBefore(';')?.trim()?.lowercase()) {
+        val normalizedMimeType = mimeType?.substringBefore(';')?.trim()?.lowercase().orEmpty()
+        return when (normalizedMimeType) {
             "text/markdown" -> DocumentKind.MARKDOWN
+            "application/json", "text/json" -> DocumentKind.JSON
+            "text/csv", "text/comma-separated-values", "application/csv" -> DocumentKind.CSV
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document" -> DocumentKind.DOCX
             "text/html" -> DocumentKind.HTML
             "application/pdf" -> DocumentKind.PDF
             "text/plain" -> DocumentKind.PLAIN_TEXT
             else -> when {
-                mimeType?.startsWith("image/") == true -> DocumentKind.IMAGE
-                mimeType?.startsWith("text/") == true -> DocumentKind.PLAIN_TEXT
+                normalizedMimeType.endsWith("+json") -> DocumentKind.JSON
+                normalizedMimeType.startsWith("image/") -> DocumentKind.IMAGE
+                normalizedMimeType.startsWith("text/") -> DocumentKind.PLAIN_TEXT
                 else -> DocumentKind.UNSUPPORTED
             }
         }

@@ -88,14 +88,15 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileNotFoundException
 import java.io.IOException
+import java.nio.charset.Charset
 import java.security.MessageDigest
 import kotlin.math.roundToInt
 
 /**
- * 단일 파일 뷰어 — 앱의 핵심 동선. "내 파일" 등에서 md/txt/docx/html/pdf/이미지를
+ * 단일 파일 뷰어 — 앱의 핵심 동선. "내 파일" 등에서 md/txt/json/csv/docx/html/pdf/이미지를
  * 탭하면 이 화면이 바로 열린다 (볼트 설정 불필요).
  *
- * - md/txt: 즉시 렌더링 (원본은 읽기만)
+ * - md/txt/json/csv: 즉시 렌더링 (원본은 읽기만)
  * - docx: 캐시에 즉석 변환 후 렌더링
  * - html: JS 비활성 WebView (오프라인 — 원격 리소스 로드 안 함)
  * - 이미지: 네이티브 몰입형 화면맞춤 표시 (핀치 줌)
@@ -715,6 +716,32 @@ private fun loadDocument(
         )
     }
 
+    DocumentKind.JSON -> {
+        val text = resolver.readTextPreview(uri)
+        val preview = StructuredTextHtmlBuilder.json(text.text, sourceTruncated = text.truncated)
+        LoadedViewerDocument(
+            state = ViewerState.Web(PreviewHtmlBuilder.build(preview.bodyHtml), { null }),
+            notice = when {
+                preview.truncated -> context.getString(R.string.viewer_text_truncated)
+                !preview.formatted -> context.getString(R.string.viewer_json_raw_fallback)
+                else -> null
+            },
+        )
+    }
+
+    DocumentKind.CSV -> {
+        val text = resolver.readTextPreview(uri, fallbackCharset = CSV_FALLBACK_CHARSET)
+        val preview = StructuredTextHtmlBuilder.csv(text.text, sourceTruncated = text.truncated)
+        LoadedViewerDocument(
+            state = ViewerState.Web(PreviewHtmlBuilder.build(preview.bodyHtml), { null }),
+            notice = when {
+                text.truncated || preview.truncated -> context.getString(R.string.viewer_text_truncated)
+                !preview.formatted -> context.getString(R.string.viewer_csv_raw_fallback)
+                else -> null
+            },
+        )
+    }
+
     DocumentKind.HTML -> {
         // JS 비활성 + 네트워크 차단 상태로 원본 그대로 표시 (스타일 보존)
         val html = resolver.readTextPreview(uri)
@@ -996,8 +1023,10 @@ private fun ContentResolver.displayNameOf(uri: Uri): String? {
     return null
 }
 
-private fun ContentResolver.readTextPreview(uri: Uri): BoundedTextRead =
-    openInputStream(uri)?.use { it.readTextBounded(TEXT_PREVIEW_MAX_BYTES, openableSize(uri)) }
+private fun ContentResolver.readTextPreview(uri: Uri, fallbackCharset: Charset? = null): BoundedTextRead =
+    openInputStream(uri)?.use {
+        it.readTextBounded(TEXT_PREVIEW_MAX_BYTES, openableSize(uri), fallbackCharset)
+    }
         ?: throw FileNotFoundException("$uri")
 
 private fun BoundedTextRead.truncationNotice(context: Context): String? =
@@ -1092,6 +1121,11 @@ private const val IMAGE_SCREEN_MULTIPLIER = 2
 private const val MARKDOWN_MIME_TYPE = "text/markdown"
 private const val BINARY_MIME_TYPE = "application/octet-stream"
 private const val TAG = "SingleDocumentViewer"
+private val CSV_FALLBACK_CHARSET: Charset? by lazy {
+    sequenceOf("MS949", "EUC-KR")
+        .mapNotNull { name -> runCatching { Charset.forName(name) }.getOrNull() }
+        .firstOrNull()
+}
 private val SAF_CHILD_PROJECTION = arrayOf(
     DocumentsContract.Document.COLUMN_DOCUMENT_ID,
     DocumentsContract.Document.COLUMN_DISPLAY_NAME,

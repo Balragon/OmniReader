@@ -28,6 +28,8 @@
     <string name="viewer_docx_too_large">This DOCX is too large to convert (over 50MB)</string>
     <string name="viewer_unsupported_format">Unsupported format: %s</string>
     <string name="viewer_text_truncated">File is large — showing the beginning only</string>
+    <string name="viewer_json_raw_fallback">Couldn\'t format this JSON — showing the raw text</string>
+    <string name="viewer_csv_raw_fallback">Couldn\'t make a table from this CSV — showing the raw text</string>
     <string name="pdf_page">Page %d</string>
     <string name="pdf_page_rendering">Rendering page %d…</string>
     <string name="error_permission_lost">Folder access permission was lost</string>
