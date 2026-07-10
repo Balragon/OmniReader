@@ -21,6 +21,14 @@
 > - 보류: <하다 만 것, 알게 됐지만 안 고친 것 — 없으면 생략>
 > ```
 
+### 2026-07-10 Codex (298ec6d..HEAD)
+- 요지: JSON·CSV 지원을 정식 배포하기 위해 앱 버전을 `versionCode=3`,
+  `versionName=1.2.0`으로 상승.
+- 검증: `./gradlew test assembleRelease` 통과. APK manifest에서 3/1.2.0 확인,
+  OmniReader 릴리스 인증서 SHA-256 `b656c3a0…52f6d16` 확인. Galaxy S21 Ultra에
+  1.1.0→1.2.0 업데이트 설치 후 최근 CSV 재열기·JSON 피커 열기·한글 렌더 확인,
+  앱 프로세스 FATAL/오류 로그 0건.
+
 ### 2026-07-10 Codex (3274054..HEAD)
 - 요지: JSON·CSV를 새 문서 종류로 추가. JSON은 유효할 때 2칸 들여쓰기로 정리하고
   실패 시 안전한 원문으로 폴백, CSV는 RFC 4180 따옴표·쉼표·셀 개행을 표로 렌더.
