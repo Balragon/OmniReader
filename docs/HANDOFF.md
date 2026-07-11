@@ -21,6 +21,14 @@
 > - 보류: <하다 만 것, 알게 됐지만 안 고친 것 — 없으면 생략>
 > ```
 
+### 2026-07-11 Codex (8839fce..HEAD)
+- 요지: 보안 강화 빌드를 기존 v1.2.0 자산에 덮어쓰지 않고 새 패치 릴리스로
+  배포하기 위해 `versionCode=4`, `versionName=1.2.1`로 상승.
+- 검증: `./gradlew test assembleRelease` 통과. APK manifest 4/1.2.1 및 기존
+  OmniReader 릴리스 인증서 확인. Galaxy S21 Ultra에서 1.2.0→1.2.1 업데이트
+  설치 후 정상 한국어 DOCX와 극단 PDF 안전 안내를 재확인했고 FATAL/OOM 0건.
+- 공개 링크: https://github.com/Balragon/OmniReader/releases/tag/v1.2.1
+
 ### 2026-07-11 Codex (e673edd..HEAD)
 - 요지: 심층 보안 검토에서 확인한 문서 입력 경계를 강화. DOCX 실제 입력·ZIP
   항목/팽창·자산·변환 결과에 공통 예산을 적용하고 DTD 및 비하이퍼링크 외부
