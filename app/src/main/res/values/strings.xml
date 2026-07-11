@@ -26,12 +26,14 @@
     <string name="viewer_open_pdf_failed">Couldn\'t open the PDF: %s</string>
     <string name="viewer_image_decode_failed">Couldn\'t decode the image</string>
     <string name="viewer_docx_too_large">This DOCX is too large to convert (over 50MB)</string>
+    <string name="viewer_docx_rejected">This DOCX cannot be opened safely because it is too complex or contains an external reference</string>
     <string name="viewer_unsupported_format">Unsupported format: %s</string>
     <string name="viewer_text_truncated">File is large — showing the beginning only</string>
     <string name="viewer_json_raw_fallback">Couldn\'t format this JSON — showing the raw text</string>
     <string name="viewer_csv_raw_fallback">Couldn\'t make a table from this CSV — showing the raw text</string>
     <string name="pdf_page">Page %d</string>
     <string name="pdf_page_rendering">Rendering page %d…</string>
+    <string name="pdf_page_render_failed">Page %d cannot be rendered safely</string>
     <string name="error_permission_lost">Folder access permission was lost</string>
     <string name="error_document_missing">The file was moved or deleted</string>
     <string name="error_provider_unavailable">Storage isn\'t responding. Try again shortly</string>

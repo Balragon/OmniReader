@@ -1,12 +1,19 @@
 package dev.gold.mdvault.document
 
 import dev.gold.mdvault.docx.MammothDocxImportEngine
+import dev.gold.mdvault.docx.DocxImportRejectedException
+import dev.gold.mdvault.docx.DocxImportEngine
+import dev.gold.mdvault.docx.DocxImportPolicy
+import dev.gold.mdvault.docx.HtmlImportResult
 import dev.gold.mdvault.markdown.FlexmarkMarkdownEngine
 import dev.gold.mdvault.markdown.JsoupHtmlCleaner
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Test
 import java.io.File
+import java.io.ByteArrayInputStream
 
 class DocxToMarkdownImporterTest {
 
@@ -25,7 +32,7 @@ class DocxToMarkdownImporterTest {
     @Test
     fun `every docx fixture imports to non-blank markdown`() {
         val fixtures = fixtureDir.listFiles { file -> file.extension == "docx" }
-            .orEmpty().sortedBy { it.name }
+            .orEmpty().filterNot { it.name == "links.docx" }.sortedBy { it.name }
         assertTrue(fixtures.isNotEmpty())
         for (fixture in fixtures) {
             val result = import(fixture.name)
@@ -51,9 +58,34 @@ class DocxToMarkdownImporterTest {
     }
 
     @Test
-    fun `unsafe links are dropped with warnings`() {
-        val result = import("links.docx")
-        // javascript: href fixture — cleaner가 제거하고 warning으로 수집
-        assertFalse(result.markdown.contains("javascript:"))
+    fun `external image relationships are rejected before conversion`() {
+        val error = assertThrows(DocxImportRejectedException::class.java) {
+            import("links.docx")
+        }
+        assertEquals(DocxImportRejectedException.Reason.EXTERNAL_RELATIONSHIP, error.reason)
+    }
+
+    @Test
+    fun `conversion output is bounded before DOM expansion`() {
+        val limitedImporter = DocxToMarkdownImporter(
+            docxImportEngine = object : DocxImportEngine {
+                override fun importDocx(
+                    input: java.io.InputStream,
+                    imageSink: dev.gold.mdvault.docx.ImageSink,
+                ): HtmlImportResult = HtmlImportResult(
+                    html = "<p>${"x".repeat(32)}</p>",
+                    warnings = emptyList(),
+                    extractedAssets = emptyList(),
+                )
+            },
+            htmlCleaner = JsoupHtmlCleaner(),
+            markdownEngine = FlexmarkMarkdownEngine(),
+            policy = DocxImportPolicy(maxConversionCharacters = 16),
+        )
+
+        val error = assertThrows(DocxImportRejectedException::class.java) {
+            limitedImporter.import(ByteArrayInputStream(byteArrayOf())) { _, _, _ -> }
+        }
+        assertEquals(DocxImportRejectedException.Reason.CONVERSION_OUTPUT_LIMIT, error.reason)
     }
 }

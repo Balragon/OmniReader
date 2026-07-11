@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -227,34 +228,67 @@ fun PdfPagesView(
 
 @Composable
 private fun PdfPageItem(document: PdfDocumentHolder, pageIndex: Int) {
-    var bitmap by remember(document, pageIndex) { mutableStateOf<Bitmap?>(null) }
+    var renderState by remember(document, pageIndex) {
+        mutableStateOf<PdfPageRenderState>(PdfPageRenderState.Loading)
+    }
 
     LaunchedEffect(document, pageIndex) {
-        bitmap = withContext(Dispatchers.IO) {
-            runCatching { document.renderPage(pageIndex, TARGET_WIDTH_PX) }.getOrNull()
+        renderState = withContext(Dispatchers.IO) {
+            runCatching { document.renderPage(pageIndex, TARGET_WIDTH_PX) }
+                .fold(
+                    onSuccess = { PdfPageRenderState.Rendered(it) },
+                    onFailure = { PdfPageRenderState.Error },
+                )
         }
     }
 
-    val rendered = bitmap
     val pageNumber = pageIndex + 1
-    if (rendered != null) {
-        Image(
-            bitmap = rendered.asImageBitmap(),
-            contentDescription = stringResource(R.string.pdf_page, pageNumber),
-            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-            contentScale = ContentScale.FillWidth,
-        )
-    } else {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(document.firstPageWidthHeightRatio)
-                .padding(bottom = 8.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(stringResource(R.string.pdf_page_rendering, pageNumber))
+    when (val state = renderState) {
+        is PdfPageRenderState.Rendered -> {
+            Image(
+                bitmap = state.bitmap.asImageBitmap(),
+                contentDescription = stringResource(R.string.pdf_page, pageNumber),
+                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                contentScale = ContentScale.FillWidth,
+            )
+        }
+
+        PdfPageRenderState.Loading -> {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(document.firstPageWidthHeightRatio)
+                    .padding(bottom = 8.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = stringResource(R.string.pdf_page_rendering, pageNumber),
+                    color = ComposeColor.White,
+                )
+            }
+        }
+
+        PdfPageRenderState.Error -> {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(PDF_RENDER_ERROR_HEIGHT)
+                    .padding(bottom = 8.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = stringResource(R.string.pdf_page_render_failed, pageNumber),
+                    color = ComposeColor.White,
+                )
+            }
         }
     }
+}
+
+private sealed interface PdfPageRenderState {
+    data object Loading : PdfPageRenderState
+    data object Error : PdfPageRenderState
+    data class Rendered(val bitmap: Bitmap) : PdfPageRenderState
 }
 
 private data class PdfReadingPosition(
@@ -286,6 +320,7 @@ private fun savePdfReadingPositionAsync(
 }
 
 private const val TARGET_WIDTH_PX = 1440
+private val PDF_RENDER_ERROR_HEIGHT = 160.dp
 private const val TAG = "PdfPagesView"
 private const val PDF_POSITION_SAVE_DEBOUNCE_MS = 1_000L
 
@@ -302,10 +337,11 @@ class PdfDocumentHolder private constructor(
     suspend fun renderPage(index: Int, targetWidthPx: Int): Bitmap = mutex.withLock {
         val page = renderer.openPage(index)
         try {
-            val scale = targetWidthPx.toFloat() / page.width
+            val bitmapSize = calculatePdfBitmapSize(page.width, page.height, targetWidthPx)
+                ?: throw IllegalArgumentException("PDF page dimensions exceed safe render limits")
             val bitmap = Bitmap.createBitmap(
-                targetWidthPx,
-                (page.height * scale).toInt().coerceAtLeast(1),
+                bitmapSize.width,
+                bitmapSize.height,
                 Bitmap.Config.ARGB_8888,
             )
             bitmap.eraseColor(Color.WHITE)
@@ -339,10 +375,15 @@ private fun PdfRenderer.firstPageWidthHeightRatio(): Float {
     if (pageCount <= 0) return DEFAULT_PDF_PAGE_WIDTH_HEIGHT_RATIO
     val page = openPage(0)
     return try {
-        page.width.toFloat() / page.height.toFloat().coerceAtLeast(1f)
+        val ratio = page.width.toFloat() / page.height.toFloat().coerceAtLeast(1f)
+        ratio.takeIf { it.isFinite() && it > 0f }
+            ?.coerceIn(MIN_PDF_PLACEHOLDER_RATIO, MAX_PDF_PLACEHOLDER_RATIO)
+            ?: DEFAULT_PDF_PAGE_WIDTH_HEIGHT_RATIO
     } finally {
         page.close()
     }
 }
 
 private const val DEFAULT_PDF_PAGE_WIDTH_HEIGHT_RATIO = 0.707f
+private const val MIN_PDF_PLACEHOLDER_RATIO = 0.1f
+private const val MAX_PDF_PLACEHOLDER_RATIO = 10f

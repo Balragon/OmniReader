@@ -2,6 +2,7 @@ package dev.gold.mdvault
 
 import dev.gold.mdvault.document.DocxToMarkdownImporter
 import dev.gold.mdvault.docx.DocxImportEngine
+import dev.gold.mdvault.docx.DocxImportPolicy
 import dev.gold.mdvault.docx.MammothDocxImportEngine
 import dev.gold.mdvault.markdown.FlexmarkMarkdownEngine
 import dev.gold.mdvault.markdown.JsoupHtmlCleaner
@@ -19,10 +20,12 @@ class AppContainer(context: android.content.Context) {
     val readerSettingsRepository: ReaderSettingsRepository = ReaderSettingsRepository(applicationContext)
     val htmlCleaner: JsoupHtmlCleaner = JsoupHtmlCleaner()
     val markdownEngine: MarkdownEngine = FlexmarkMarkdownEngine(htmlCleaner)
-    val docxImportEngine: DocxImportEngine = MammothDocxImportEngine()
+    private val docxImportPolicy = DocxImportPolicy()
+    val docxImportEngine: DocxImportEngine = MammothDocxImportEngine(docxImportPolicy)
     val docxToMarkdownImporter: DocxToMarkdownImporter = DocxToMarkdownImporter(
         docxImportEngine = docxImportEngine,
         htmlCleaner = htmlCleaner,
         markdownEngine = markdownEngine,
+        policy = docxImportPolicy,
     )
 }

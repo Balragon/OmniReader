@@ -25,12 +25,14 @@
     <string name="viewer_open_pdf_failed">PDF를 열 수 없습니다: %s</string>
     <string name="viewer_image_decode_failed">이미지를 디코딩할 수 없습니다</string>
     <string name="viewer_docx_too_large">DOCX 파일이 너무 커서 변환할 수 없습니다 (50MB 초과)</string>
+    <string name="viewer_docx_rejected">이 DOCX는 구조가 너무 복잡하거나 외부 참조가 있어 안전하게 열 수 없습니다</string>
     <string name="viewer_unsupported_format">지원하지 않는 형식입니다: %s</string>
     <string name="viewer_text_truncated">파일이 너무 커서 앞부분만 표시합니다</string>
     <string name="viewer_json_raw_fallback">JSON을 정리할 수 없어 원문으로 표시합니다</string>
     <string name="viewer_csv_raw_fallback">CSV를 표로 만들 수 없어 원문으로 표시합니다</string>
     <string name="pdf_page">페이지 %d</string>
     <string name="pdf_page_rendering">페이지 %d 렌더링 중…</string>
+    <string name="pdf_page_render_failed">페이지 %d를 안전하게 표시할 수 없습니다</string>
     <string name="error_permission_lost">폴더 접근 권한이 사라졌습니다</string>
     <string name="error_document_missing">파일이 이동 되었거나 삭제되었습니다</string>
     <string name="error_provider_unavailable">저장소가 응답하지 않습니다. 잠시 후 다시 시도하세요</string>

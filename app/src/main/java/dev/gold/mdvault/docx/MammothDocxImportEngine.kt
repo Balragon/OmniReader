@@ -6,15 +6,43 @@ import java.io.ByteArrayInputStream
 import java.io.InputStream
 import java.security.MessageDigest
 
-class MammothDocxImportEngine : DocxImportEngine {
+class MammothDocxImportEngine(
+    private val policy: DocxImportPolicy = DocxImportPolicy(),
+) : DocxImportEngine {
 
     override fun importDocx(input: InputStream, imageSink: ImageSink): HtmlImportResult {
         val assets = mutableListOf<ExtractedAsset>()
         var sequence = 0
+        var totalAssetBytes = 0L
+        var pendingRejection: DocxImportRejectedException? = null
+
+        fun reject(reason: DocxImportRejectedException.Reason): Nothing {
+            val error = DocxImportRejectedException(reason)
+            pendingRejection = error
+            throw error
+        }
 
         val converter = DocumentConverter().imageConverter { image ->
-            val bytes = image.inputStream.use { it.readBytes() }
+            pendingRejection?.let { throw it }
             sequence += 1
+            if (sequence > policy.maxAssetCount) {
+                reject(DocxImportRejectedException.Reason.ASSET_COUNT_LIMIT)
+            }
+            val bytes = try {
+                image.inputStream.use {
+                    it.readBytesLimited(
+                        policy.maxAssetBytes,
+                        DocxImportRejectedException.Reason.ASSET_SIZE_LIMIT,
+                    )
+                }
+            } catch (error: DocxImportRejectedException) {
+                pendingRejection = error
+                throw error
+            }
+            totalAssetBytes += bytes.size
+            if (totalAssetBytes > policy.maxTotalAssetBytes) {
+                reject(DocxImportRejectedException.Reason.TOTAL_ASSET_SIZE_LIMIT)
+            }
             val relativePath = buildString {
                 append("media/")
                 append(sha256Prefix(bytes))
@@ -31,8 +59,15 @@ class MammothDocxImportEngine : DocxImportEngine {
             attributes
         }
 
-        val sanitized = DocxXmlSanitizer.sanitize(input)
-        val result = converter.convertToHtml(ByteArrayInputStream(sanitized.bytes))
+        val sanitized = DocxXmlSanitizer.sanitize(input, policy)
+        val result = try {
+            converter.convertToHtml(ByteArrayInputStream(sanitized.bytes))
+        } catch (error: RuntimeException) {
+            pendingRejection?.let { throw it }
+            throw error
+        }
+        pendingRejection?.let { throw it }
+        policy.requireConversionSize(result.value)
 
         val warnings = buildList {
             if (sanitized.strippedCount > 0) {
@@ -66,5 +101,13 @@ class MammothDocxImportEngine : DocxImportEngine {
 
     private companion object {
         private const val HASH_PREFIX_LENGTH = 12
+    }
+
+    private fun DocxImportPolicy.requireConversionSize(value: String) {
+        if (value.length > maxConversionCharacters) {
+            throw DocxImportRejectedException(
+                DocxImportRejectedException.Reason.CONVERSION_OUTPUT_LIMIT,
+            )
+        }
     }
 }

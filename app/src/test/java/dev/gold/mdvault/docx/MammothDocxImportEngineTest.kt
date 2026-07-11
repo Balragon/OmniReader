@@ -4,6 +4,7 @@ import dev.gold.mdvault.document.ConversionWarning
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertThrows
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -33,8 +34,9 @@ class MammothDocxImportEngineTest {
     fun `all docx fixtures convert without exception and embed no data uris`() {
         val fixtures = fixtureDir.listFiles { file -> file.extension == "docx" }
             .orEmpty()
+            .filterNot { it.name == "links.docx" }
             .sortedBy { it.name }
-        assertEquals("Expected the 10 S0 fixtures in ${fixtureDir.path}", 10, fixtures.size)
+        assertEquals("Expected 9 safe S0 fixtures in ${fixtureDir.path}", 9, fixtures.size)
 
         for (fixture in fixtures) {
             val result = importFixture(fixture.name)
@@ -44,6 +46,25 @@ class MammothDocxImportEngineTest {
             )
             assertTrue("Empty HTML for ${fixture.name}", result.html.isNotBlank())
         }
+    }
+
+    @Test
+    fun `docx with an external image relationship is rejected before Mammoth opens it`() {
+        val error = assertThrows(DocxImportRejectedException::class.java) {
+            importFixture("links.docx")
+        }
+        assertEquals(DocxImportRejectedException.Reason.EXTERNAL_RELATIONSHIP, error.reason)
+    }
+
+    @Test
+    fun `embedded image count is bounded`() {
+        val limitedEngine = MammothDocxImportEngine(DocxImportPolicy(maxAssetCount = 1))
+        val error = assertThrows(DocxImportRejectedException::class.java) {
+            File(fixtureDir, "images.docx").inputStream().use { input ->
+                limitedEngine.importDocx(input) { _, _, _ -> }
+            }
+        }
+        assertEquals(DocxImportRejectedException.Reason.ASSET_COUNT_LIMIT, error.reason)
     }
 
     @Test

@@ -11,7 +11,7 @@ import dev.gold.mdvault.settings.ReaderSettingsRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import java.io.ByteArrayInputStream
+import java.io.InputStream
 import kotlin.math.roundToInt
 
 internal const val VAULT_HOST = "vault.local"
@@ -30,7 +30,7 @@ internal fun vaultBaseUrl(baseDirectory: String): String {
  */
 internal class DocumentWebViewClient(
     private val context: Context,
-    private val loadAsset: (String) -> ByteArray?,
+    private val loadAsset: (String) -> InputStream?,
     private val onPageFinished: ((WebView) -> Unit)? = null,
 ) : WebViewClient() {
 
@@ -42,8 +42,8 @@ internal class DocumentWebViewClient(
         if (url.host != VAULT_HOST) return null
         val assetPath = url.path.orEmpty().trimStart('/')
         if (assetPath.isEmpty()) return null
-        val bytes = loadAsset(assetPath) ?: return null
-        return WebResourceResponse(mimeTypeFor(assetPath), null, ByteArrayInputStream(bytes))
+        val stream = loadAsset(assetPath) ?: return null
+        return WebResourceResponse(mimeTypeFor(assetPath), null, stream)
     }
 
     override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
@@ -51,7 +51,13 @@ internal class DocumentWebViewClient(
         if (url.host == VAULT_HOST) {
             return true
         }
-        if (url.scheme == "http" || url.scheme == "https") {
+        if (
+            shouldLaunchExternalNavigation(
+                scheme = url.scheme,
+                isForMainFrame = request.isForMainFrame,
+                hasGesture = request.hasGesture(),
+            )
+        ) {
             runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, url)) }
         }
         return true // 뷰어는 문서 하나만 표시 — WebView 내 탐색 금지
@@ -74,6 +80,14 @@ internal class DocumentWebViewClient(
             else -> "application/octet-stream"
         }
 }
+
+internal fun shouldLaunchExternalNavigation(
+    scheme: String?,
+    isForMainFrame: Boolean,
+    hasGesture: Boolean,
+): Boolean =
+    isForMainFrame && hasGesture &&
+        (scheme.equals("http", ignoreCase = true) || scheme.equals("https", ignoreCase = true))
 
 internal fun nextReaderFontScalePercent(current: Int): Int {
     val currentIndex = READER_FONT_SCALE_STEPS.indexOf(current)

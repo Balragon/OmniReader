@@ -4,7 +4,7 @@
 > 이어받는다. **작업을 마친 에이전트는 반드시 "현재 상태"와 "다음 작업"을
 > 갱신하고 커밋할 것.** 규칙의 원본은 CLAUDE.md (여기 복제 금지).
 
-최종 갱신: 2026-07-10
+최종 갱신: 2026-07-11
 
 ## 작업 로그 (append-only — 최신이 위, 전면 재작성 금지)
 
@@ -20,6 +20,20 @@
 > - ⚠️ <계약 변경/새 지뢰/미검증 — 없으면 이 줄 생략>
 > - 보류: <하다 만 것, 알게 됐지만 안 고친 것 — 없으면 생략>
 > ```
+
+### 2026-07-11 Codex (e673edd..HEAD)
+- 요지: 심층 보안 검토에서 확인한 문서 입력 경계를 강화. DOCX 실제 입력·ZIP
+  항목/팽창·자산·변환 결과에 공통 예산을 적용하고 DTD 및 비하이퍼링크 외부
+  관계를 Mammoth 전에 거부. PDF 비트맵 크기 상한과 WebView 사용자 동작 확인을
+  추가하고 DOCX 캐시 이미지는 재버퍼링 없이 스트림으로 제공.
+- 검증: `./gradlew test assembleRelease` 통과. 서명된 release APK를 Galaxy S21
+  Ultra에 업데이트 설치해 정상 한국어/이미지 DOCX, 정상 PDF, 외부 이미지 관계
+  DOCX 차단, 혼합 대소문자 XML DTD 차단, 100x10,000pt 극단 PDF 안전 안내,
+  HTML 자동 이동 차단/직접 클릭 브라우저 실행 확인. FATAL/OOM 0건.
+- ⚠️ `DocxImportPolicy`가 DOCX 제한의 단일 계약이며 AppContainer가 엔진과 변환기에
+  같은 인스턴스를 주입한다. `ViewerState.Web.loadAsset` 계약은 `ByteArray?`에서
+  `InputStream?`으로 변경됐다. 극단 PDF 오류 상태는 문서 종횡비를 쓰지 않고
+  160dp 흰색 안내 영역을 사용한다.
 
 ### 2026-07-10 Codex (298ec6d..HEAD)
 - 요지: JSON·CSV 지원을 정식 배포하기 위해 앱 버전을 `versionCode=3`,

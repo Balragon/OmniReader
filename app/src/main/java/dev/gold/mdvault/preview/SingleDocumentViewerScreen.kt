@@ -71,6 +71,7 @@ import dev.gold.mdvault.R
 import dev.gold.mdvault.document.DocumentKind
 import dev.gold.mdvault.document.DocumentTypeDetector
 import dev.gold.mdvault.document.DocxToMarkdownImporter
+import dev.gold.mdvault.docx.DocxImportRejectedException
 import dev.gold.mdvault.markdown.MarkdownEngine
 import dev.gold.mdvault.settings.ReaderSettingsRepository
 import dev.gold.mdvault.storage.BoundedTextRead
@@ -87,6 +88,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileNotFoundException
+import java.io.InputStream
 import java.io.IOException
 import java.nio.charset.Charset
 import java.security.MessageDigest
@@ -164,6 +166,9 @@ fun SingleDocumentViewerScreen(
             } catch (e: IllegalStateException) {
                 Log.w(TAG, "Provider unavailable while opening document", e)
                 ViewerState.Error(VaultError.ProviderUnavailable().toVaultErrorUi())
+            } catch (e: DocxImportRejectedException) {
+                Log.w(TAG, "Rejected unsafe or oversized DOCX: ${e.reason}")
+                ViewerState.Error(VaultErrorUi(messageRes = R.string.viewer_docx_rejected))
             } catch (e: Exception) {
                 ViewerState.Error(VaultErrorUi(rawMessage = e.message ?: e.javaClass.simpleName))
             }
@@ -669,7 +674,7 @@ private sealed interface ViewerState {
     data object Pdf : ViewerState
     data class Web(
         val html: String,
-        val loadAsset: (String) -> ByteArray?,
+        val loadAsset: (String) -> InputStream?,
         val savableMarkdown: String? = null,
         val assetRoot: File? = null,
         val assetRelativePaths: List<String> = emptyList(),
@@ -781,7 +786,7 @@ private fun loadDocument(
                 ViewerState.Web(
                     html = PreviewHtmlBuilder.build(markdownEngine.toHtml(imported.markdown)),
                     loadAsset = { relativePath ->
-                        assetRoot.resolveSafeAssetOrNull(relativePath)?.takeIf { it.isFile }?.readBytes()
+                        assetRoot.resolveSafeAssetOrNull(relativePath)?.takeIf { it.isFile }?.inputStream()
                     },
                     savableMarkdown = imported.markdown,
                     assetRoot = assetRoot,
