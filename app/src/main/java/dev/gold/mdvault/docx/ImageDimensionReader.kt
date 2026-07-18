@@ -37,24 +37,27 @@ object ImageDimensionReader {
         if (bytes.size < 4) return null
         if (bytes.u(0) != 0xFF || bytes.u(1) != 0xD8) return null
         var index = 2
-        while (index + 9 < bytes.size) {
+        while (index + 1 < bytes.size) {
             if (bytes.u(index) != 0xFF) return null
-            var marker = bytes.u(index + 1)
             // 패딩된 0xFF 스킵
-            while (marker == 0xFF && index + 2 < bytes.size) {
+            while (index + 1 < bytes.size && bytes.u(index + 1) == 0xFF) {
                 index++
-                marker = bytes.u(index + 1)
             }
+            if (index + 1 >= bytes.size) return null
+            val marker = bytes.u(index + 1)
             when {
                 marker == 0x01 || marker in 0xD0..0xD9 -> index += 2 // standalone
                 isSofMarker(marker) -> {
+                    if (index + 8 >= bytes.size) return null
                     val height = (bytes.u(index + 5) shl 8) or bytes.u(index + 6)
                     val width = (bytes.u(index + 7) shl 8) or bytes.u(index + 8)
                     return if (width > 0 && height > 0) Dimensions(width, height) else null
                 }
                 else -> {
+                    if (index + 3 >= bytes.size) return null
                     val length = (bytes.u(index + 2) shl 8) or bytes.u(index + 3)
                     if (length < 2) return null
+                    if (length > bytes.size - index - 2) return null
                     index += 2 + length
                 }
             }

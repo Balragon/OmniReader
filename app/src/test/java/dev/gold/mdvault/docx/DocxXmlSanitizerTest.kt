@@ -10,6 +10,7 @@ import java.io.ByteArrayOutputStream
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
+import java.util.concurrent.CancellationException
 
 class DocxXmlSanitizerTest {
 
@@ -21,6 +22,17 @@ class DocxXmlSanitizerTest {
         val error = assertThrows(DocxImportRejectedException::class.java) {
             sanitize("word/document.xml" to malicious.toByteArray())
         }
+        assertEquals(DocxImportRejectedException.Reason.DTD_NOT_ALLOWED, error.reason)
+    }
+
+    @Test
+    fun `normalizes illegal controls before checking for doctype`() {
+        val malicious = "<!DOC".toByteArray() + byteArrayOf(0x01) + "TYPE doc><doc/>".toByteArray()
+
+        val error = assertThrows(DocxImportRejectedException::class.java) {
+            sanitize("word/document.xml" to malicious)
+        }
+
         assertEquals(DocxImportRejectedException.Reason.DTD_NOT_ALLOWED, error.reason)
     }
 
@@ -81,6 +93,18 @@ class DocxXmlSanitizerTest {
     }
 
     @Test
+    fun `relationship attributes after a quoted angle bracket cannot bypass validation`() {
+        val relationships =
+            """<Relationship Type="image" Note=">" TargetMode="External" Target="file:///tmp/private.png" />"""
+
+        val error = assertThrows(DocxImportRejectedException::class.java) {
+            sanitize("word/_rels/document.xml.rels" to relationships.toByteArray())
+        }
+
+        assertEquals(DocxImportRejectedException.Reason.EXTERNAL_RELATIONSHIP, error.reason)
+    }
+
+    @Test
     fun `external hyperlinks remain valid document content`() {
         val relationships = """
             <Relationships>
@@ -107,6 +131,59 @@ class DocxXmlSanitizerTest {
             }
             assertEquals(DocxImportRejectedException.Reason.EXTERNAL_RELATIONSHIP, error.reason)
         }
+    }
+
+    @Test
+    fun `malformed XML is rejected instead of reaching Mammoth`() {
+        val error = assertThrows(DocxImportRejectedException::class.java) {
+            sanitize("word/document.xml" to "<document><unclosed></document>".toByteArray())
+        }
+
+        assertEquals("MALFORMED_XML", error.reason.name)
+    }
+
+    @Test
+    fun `only an XML declaration controls the declared encoding`() {
+        val validUtf8 = """<document encoding="windows-1252"><text>safe</text></document>"""
+
+        val sanitized = sanitize("word/document.xml" to validUtf8.toByteArray())
+
+        assertTrue(
+            entryBytes(sanitized.bytes, "word/document.xml")
+                .toString(Charsets.UTF_8)
+                .contains("windows-1252"),
+        )
+    }
+
+    @Test
+    fun `strips illegal UTF16 control code points before XML parsing`() {
+        val source = "<?xml version=\"1.0\" encoding=\"UTF-16LE\"?><document>a\u0001b</document>"
+            .toByteArray(Charsets.UTF_16LE)
+
+        val sanitized = sanitize("word/document.xml" to source)
+        val decoded = entryBytes(sanitized.bytes, "word/document.xml").toString(Charsets.UTF_16LE)
+
+        assertEquals("<?xml version=\"1.0\" encoding=\"UTF-16LE\"?><document>ab</document>", decoded)
+        assertEquals(2, sanitized.strippedCount)
+    }
+
+    @Test
+    fun `content types classify nonstandard XML part names`() {
+        val contentTypes = """
+            <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+              <Override PartName="/word/custom.payload" ContentType="application/vnd.example+xml" />
+            </Types>
+        """.trimIndent()
+        val archive = zipOfBytes(
+            "word/custom.payload" to "<!DOCTYPE doc><doc/>".toByteArray(),
+            "[Content_Types].xml" to contentTypes.toByteArray(),
+        )
+
+        val error = assertThrows(DocxImportRejectedException::class.java) {
+            DocxXmlSanitizer.sanitize(ByteArrayInputStream(archive))
+        }
+
+        assertEquals(DocxImportRejectedException.Reason.DTD_NOT_ALLOWED, error.reason)
     }
 
     @Test
@@ -155,6 +232,23 @@ class DocxXmlSanitizerTest {
             )
         }
         assertEquals(DocxImportRejectedException.Reason.COMPRESSED_INPUT_LIMIT, error.reason)
+    }
+
+    @Test
+    fun `cancellation is observed inside archive processing and is not wrapped`() {
+        val archive = zipOfBytes(
+            "a.xml" to "<a/>".toByteArray(),
+            "b.xml" to "<b/>".toByteArray(),
+        )
+        var checks = 0
+
+        assertThrows(CancellationException::class.java) {
+            DocxXmlSanitizer.sanitize(ByteArrayInputStream(archive)) {
+                checks += 1
+                if (checks >= 4) throw CancellationException("cancelled")
+            }
+        }
+        assertTrue(checks >= 4)
     }
 
     private fun sanitize(entry: Pair<String, ByteArray>): DocxXmlSanitizer.Sanitized =

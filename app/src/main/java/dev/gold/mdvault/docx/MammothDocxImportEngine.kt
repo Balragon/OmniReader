@@ -2,15 +2,20 @@ package dev.gold.mdvault.docx
 
 import dev.gold.mdvault.document.ConversionWarning
 import org.zwobble.mammoth.DocumentConverter
-import java.io.ByteArrayInputStream
+import java.io.File
 import java.io.InputStream
 import java.security.MessageDigest
 
 class MammothDocxImportEngine(
     private val policy: DocxImportPolicy = DocxImportPolicy(),
+    private val temporaryDirectory: File? = null,
 ) : DocxImportEngine {
 
-    override fun importDocx(input: InputStream, imageSink: ImageSink): HtmlImportResult {
+    override fun importDocx(
+        input: InputStream,
+        checkCancelled: () -> Unit,
+        imageSink: ImageSink,
+    ): HtmlImportResult {
         val assets = mutableListOf<ExtractedAsset>()
         var sequence = 0
         var totalAssetBytes = 0L
@@ -23,6 +28,7 @@ class MammothDocxImportEngine(
         }
 
         val converter = DocumentConverter().imageConverter { image ->
+            checkCancelled()
             pendingRejection?.let { throw it }
             sequence += 1
             if (sequence > policy.maxAssetCount) {
@@ -33,6 +39,7 @@ class MammothDocxImportEngine(
                     it.readBytesLimited(
                         policy.maxAssetBytes,
                         DocxImportRejectedException.Reason.ASSET_SIZE_LIMIT,
+                        checkCancelled,
                     )
                 }
             } catch (error: DocxImportRejectedException) {
@@ -52,6 +59,7 @@ class MammothDocxImportEngine(
                 append(extensionFor(image.contentType))
             }
             imageSink.store(relativePath, image.contentType, bytes)
+            checkCancelled()
             assets += ExtractedAsset(relativePath, image.contentType, bytes.size.toLong())
 
             val attributes = mutableMapOf("src" to relativePath)
@@ -59,19 +67,44 @@ class MammothDocxImportEngine(
             attributes
         }
 
-        val sanitized = DocxXmlSanitizer.sanitize(input, policy)
-        val result = try {
-            converter.convertToHtml(ByteArrayInputStream(sanitized.bytes))
-        } catch (error: RuntimeException) {
-            pendingRejection?.let { throw it }
-            throw error
+        val workDirectory = temporaryDirectory?.apply {
+            if (!isDirectory && !mkdirs()) {
+                throw DocxImportRejectedException(
+                    DocxImportRejectedException.Reason.TEMPORARY_STORAGE_UNAVAILABLE,
+                )
+            }
         }
+        val sanitizedFile = File.createTempFile("omnireader-docx-sanitized-", ".zip", workDirectory)
+        val sanitized = try {
+            val sanitizeResult = sanitizedFile.outputStream().buffered().use { output ->
+                DocxXmlSanitizer.sanitizeTo(
+                    input = input,
+                    output = output,
+                    policy = policy,
+                    temporaryDirectory = workDirectory,
+                    checkCancelled = checkCancelled,
+                )
+            }
+            checkCancelled()
+            val conversion = try {
+                sanitizedFile.inputStream().buffered().use(converter::convertToHtml)
+            } catch (error: RuntimeException) {
+                pendingRejection?.let { throw it }
+                throw error
+            }
+            sanitizeResult to conversion
+        } finally {
+            sanitizedFile.delete()
+        }
+        val sanitizeResult = sanitized.first
+        val result = sanitized.second
+        checkCancelled()
         pendingRejection?.let { throw it }
         policy.requireConversionSize(result.value)
 
         val warnings = buildList {
-            if (sanitized.strippedCount > 0) {
-                add(ConversionWarning.IllegalXmlCharactersStripped(sanitized.strippedCount))
+            if (sanitizeResult.strippedCount > 0) {
+                add(ConversionWarning.IllegalXmlCharactersStripped(sanitizeResult.strippedCount))
             }
             result.warnings.mapTo(this) { ConversionWarning.UnsupportedFeature(it) }
         }

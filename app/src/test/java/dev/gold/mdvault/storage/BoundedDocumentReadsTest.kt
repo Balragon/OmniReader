@@ -47,6 +47,39 @@ class BoundedDocumentReadsTest {
         )
 
         assertTrue(read.truncated)
-        assertTrue(read.text.startsWith("가나다라마바"))
+        assertEquals("가나다라마바", read.text)
+        assertFalse(read.text.contains('\uFFFD'))
+    }
+
+    @Test
+    fun `detects and strips UTF8 and UTF16 byte order marks`() {
+        val utf8 = byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte()) + "본문".toByteArray()
+        val utf16 = byteArrayOf(0xFF.toByte(), 0xFE.toByte()) + "본문".toByteArray(Charsets.UTF_16LE)
+
+        assertEquals("본문", ByteArrayInputStream(utf8).readTextBounded(100, null).text)
+        assertEquals("본문", ByteArrayInputStream(utf16).readTextBounded(100, null).text)
+    }
+
+    @Test
+    fun `uses a bounded HTML charset declaration`() {
+        val charset = Charset.forName("windows-1252")
+        val source = "<meta charset=windows-1252><p>caf\u00e9</p>"
+
+        val read = ByteArrayInputStream(source.toByteArray(charset)).readTextBounded(1_024, null)
+
+        assertEquals(source, read.text)
+    }
+
+    @Test
+    fun `drops every incomplete UTF8 tail without a replacement character`() {
+        val source = "A\uD83D\uDE00".toByteArray()
+        for (removedBytes in 1..3) {
+            val read = ByteArrayInputStream(source).readTextBounded(
+                maxBytes = source.size - removedBytes,
+                knownSize = source.size.toLong(),
+            )
+            assertEquals("A", read.text)
+            assertFalse(read.text.contains('\uFFFD'))
+        }
     }
 }

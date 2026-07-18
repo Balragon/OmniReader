@@ -9,6 +9,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
+import java.util.concurrent.CancellationException
 
 class MammothDocxImportEngineTest {
     private val engine = MammothDocxImportEngine()
@@ -107,5 +108,37 @@ class MammothDocxImportEngineTest {
         val result = importFixture("table-merged.docx")
         assertTrue("Merged table must still produce a <table>", result.html.contains("<table"))
         // Mammoth이 병합 셀을 warning 없이 소화하면 그것도 허용 — 예외만 금지.
+    }
+
+    @Test
+    fun `temporary sanitized archives are removed after success and rejection`() {
+        val workDirectory = tempDir.newFolder("docx-work")
+        val fileBackedEngine = MammothDocxImportEngine(temporaryDirectory = workDirectory)
+
+        File(fixtureDir, "simple-korean.docx").inputStream().use { input ->
+            fileBackedEngine.importDocx(input) { _, _, _ -> }
+        }
+        assertTrue("DOCX work files leaked after success", workDirectory.listFiles().orEmpty().isEmpty())
+
+        assertThrows(DocxImportRejectedException::class.java) {
+            File(fixtureDir, "links.docx").inputStream().use { input ->
+                fileBackedEngine.importDocx(input) { _, _, _ -> }
+            }
+        }
+        assertTrue("DOCX work files leaked after rejection", workDirectory.listFiles().orEmpty().isEmpty())
+
+        var checks = 0
+        assertThrows(CancellationException::class.java) {
+            File(fixtureDir, "large.docx").inputStream().use { input ->
+                fileBackedEngine.importDocx(
+                    input = input,
+                    checkCancelled = {
+                        checks += 1
+                        if (checks >= 4) throw CancellationException("cancelled")
+                    },
+                ) { _, _, _ -> }
+            }
+        }
+        assertTrue("DOCX work files leaked after cancellation", workDirectory.listFiles().orEmpty().isEmpty())
     }
 }

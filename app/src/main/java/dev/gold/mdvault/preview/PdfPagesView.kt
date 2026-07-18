@@ -1,5 +1,6 @@
 package dev.gold.mdvault.preview
 
+import android.app.ActivityManager
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Color
@@ -40,6 +41,8 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import dev.gold.mdvault.R
@@ -49,11 +52,15 @@ import dev.gold.mdvault.ui.VaultErrorRecoveryButton
 import dev.gold.mdvault.ui.VaultErrorUi
 import dev.gold.mdvault.ui.text
 import dev.gold.mdvault.ui.toVaultErrorUi
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -75,6 +82,16 @@ fun PdfPagesView(
     documentKey: String = uri.toString(),
 ) {
     val context = LocalContext.current
+    val density = LocalDensity.current
+    val configuration = LocalConfiguration.current
+    val targetWidthPx = remember(configuration.screenWidthDp, density) {
+        with(density) { configuration.screenWidthDp.dp.roundToPx() }
+            .coerceIn(PDF_MIN_TARGET_WIDTH_PX, PDF_MAX_TARGET_WIDTH_PX)
+    }
+    val maxBitmapPixels = remember(context) {
+        val memoryClass = context.getSystemService(ActivityManager::class.java)?.memoryClass ?: 128
+        pdfMaxBitmapPixels(memoryClass)
+    }
     var error by remember(uri) { mutableStateOf<VaultErrorUi?>(null) }
     var holder by remember(uri) { mutableStateOf<PdfDocumentHolder?>(null) }
     var restoredPositionLoaded by remember(uri, documentKey, readerSettingsRepository) {
@@ -96,9 +113,20 @@ fun PdfPagesView(
         scale = nextScale
     }
 
-    DisposableEffect(uri) {
+    LaunchedEffect(uri) {
+        error = null
+        holder = null
         val opened = try {
-            PdfDocumentHolder.open(context, uri)
+            runInterruptible(Dispatchers.IO) {
+                val document = PdfDocumentHolder.open(context, uri)
+                if (Thread.currentThread().isInterrupted) {
+                    document.close()
+                    throw CancellationException("PDF open interrupted")
+                }
+                document
+            }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: SecurityException) {
             Log.w(TAG, "Permission lost while opening PDF", e)
             error = VaultError.PermissionLost().toVaultErrorUi()
@@ -116,10 +144,15 @@ fun PdfPagesView(
             error = VaultError.ProviderUnavailable().toVaultErrorUi()
             null
         } catch (e: Exception) {
-            error = VaultErrorUi(rawMessage = e.message ?: e.javaClass.simpleName)
+            Log.w(TAG, "Unexpected failure while opening PDF", e)
+            error = VaultErrorUi(messageRes = R.string.error_unknown)
             null
         }
         holder = opened
+    }
+
+    DisposableEffect(holder) {
+        val opened = holder
         onDispose { opened?.close() }
     }
 
@@ -218,7 +251,7 @@ fun PdfPagesView(
                     verticalArrangement = Arrangement.Center,
                 ) {
                     items(count = document.pageCount) { pageIndex ->
-                        PdfPageItem(document, pageIndex)
+                        PdfPageItem(document, pageIndex, targetWidthPx, maxBitmapPixels)
                     }
                 }
             }
@@ -227,24 +260,51 @@ fun PdfPagesView(
 }
 
 @Composable
-private fun PdfPageItem(document: PdfDocumentHolder, pageIndex: Int) {
+private fun PdfPageItem(
+    document: PdfDocumentHolder,
+    pageIndex: Int,
+    targetWidthPx: Int,
+    maxBitmapPixels: Long,
+) {
     var renderState by remember(document, pageIndex) {
         mutableStateOf<PdfPageRenderState>(PdfPageRenderState.Loading)
     }
 
-    LaunchedEffect(document, pageIndex) {
-        renderState = withContext(Dispatchers.IO) {
-            runCatching { document.renderPage(pageIndex, TARGET_WIDTH_PX) }
-                .fold(
-                    onSuccess = { PdfPageRenderState.Rendered(it) },
-                    onFailure = { PdfPageRenderState.Error },
-                )
+    LaunchedEffect(document, pageIndex, targetWidthPx, maxBitmapPixels) {
+        val bitmap = try {
+            withContext(Dispatchers.IO) {
+                val rendered = document.renderPage(pageIndex, targetWidthPx, maxBitmapPixels)
+                try {
+                    currentCoroutineContext().ensureActive()
+                    rendered
+                } catch (error: CancellationException) {
+                    rendered.recycle()
+                    throw error
+                }
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            Log.w(TAG, "Failed to render PDF page ${pageIndex + 1}", error)
+            renderState = PdfPageRenderState.Error
+            return@LaunchedEffect
+        }
+        try {
+            renderState = PdfPageRenderState.Rendered(bitmap)
+        } catch (error: CancellationException) {
+            bitmap.recycle()
+            throw error
         }
     }
 
     val pageNumber = pageIndex + 1
     when (val state = renderState) {
         is PdfPageRenderState.Rendered -> {
+            DisposableEffect(state.bitmap) {
+                onDispose {
+                    if (!state.bitmap.isRecycled) state.bitmap.recycle()
+                }
+            }
             Image(
                 bitmap = state.bitmap.asImageBitmap(),
                 contentDescription = stringResource(R.string.pdf_page, pageNumber),
@@ -319,7 +379,8 @@ private fun savePdfReadingPositionAsync(
     }
 }
 
-private const val TARGET_WIDTH_PX = 1440
+private const val PDF_MIN_TARGET_WIDTH_PX = 720
+private const val PDF_MAX_TARGET_WIDTH_PX = 1_440
 private val PDF_RENDER_ERROR_HEIGHT = 160.dp
 private const val TAG = "PdfPagesView"
 private const val PDF_POSITION_SAVE_DEBOUNCE_MS = 1_000L
@@ -334,10 +395,15 @@ class PdfDocumentHolder private constructor(
     val pageCount: Int = renderer.pageCount
     val firstPageWidthHeightRatio: Float = renderer.firstPageWidthHeightRatio()
 
-    suspend fun renderPage(index: Int, targetWidthPx: Int): Bitmap = mutex.withLock {
+    suspend fun renderPage(index: Int, targetWidthPx: Int, maxPixels: Long): Bitmap = mutex.withLock {
         val page = renderer.openPage(index)
         try {
-            val bitmapSize = calculatePdfBitmapSize(page.width, page.height, targetWidthPx)
+            val bitmapSize = calculatePdfBitmapSize(
+                page.width,
+                page.height,
+                targetWidthPx,
+                maxPixels = maxPixels,
+            )
                 ?: throw IllegalArgumentException("PDF page dimensions exceed safe render limits")
             val bitmap = Bitmap.createBitmap(
                 bitmapSize.width,

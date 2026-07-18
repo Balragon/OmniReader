@@ -71,6 +71,7 @@ class DocxToMarkdownImporterTest {
             docxImportEngine = object : DocxImportEngine {
                 override fun importDocx(
                     input: java.io.InputStream,
+                    checkCancelled: () -> Unit,
                     imageSink: dev.gold.mdvault.docx.ImageSink,
                 ): HtmlImportResult = HtmlImportResult(
                     html = "<p>${"x".repeat(32)}</p>",

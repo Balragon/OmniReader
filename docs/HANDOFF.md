@@ -4,7 +4,7 @@
 > 이어받는다. **작업을 마친 에이전트는 반드시 "현재 상태"와 "다음 작업"을
 > 갱신하고 커밋할 것.** 규칙의 원본은 CLAUDE.md (여기 복제 금지).
 
-최종 갱신: 2026-07-11
+최종 갱신: 2026-07-18
 
 ## 작업 로그 (append-only — 최신이 위, 전면 재작성 금지)
 
@@ -20,6 +20,23 @@
 > - ⚠️ <계약 변경/새 지뢰/미검증 — 없으면 이 줄 생략>
 > - 보류: <하다 만 것, 알게 됐지만 안 고친 것 — 없으면 생략>
 > ```
+
+### 2026-07-18 Codex (81730c0..HEAD)
+- 요지: 2026-07-17 감사 F1~F15를 현재 도달 경로에서 정리. DOCX XML은 control
+  정규화 뒤 hardened SAX로 구조 검증하고 content type까지 분류하며, 정화 ZIP은
+  bounded 임시 파일로 스트리밍한다. import 취소/1개 동시 실행, asset staging 교체·
+  실패 정리·eviction, raw HTML 정화, BOM/charset/UTF-8 절단, PDF 비동기 open·
+  기기별 bitmap 예산·recycle, JPEG bounds, generic 오류 정규화와 purity test를 보강.
+- 검증: JDK 17 `./gradlew test assembleRelease assembleDebugAndroidTest --offline
+  --no-parallel` 통과(debug 63 + release 63 tests, R8/release 및 계측 APK 생성).
+  `connectedDebugAndroidTest`는 `No connected devices!`로 실행 불가. `lintDebug`는
+  기존과 같은 2 errors(AppLinkUrlError, app_name MissingTranslation), 8 warnings.
+- ⚠️ `DocxImportEngine.importDocx`/`DocxToMarkdownImporter.import`에 cooperative
+  cancellation callback이 추가됐고 기본 DOCX budget은 compressed 32MiB, entry
+  12MiB, expanded 64MiB, asset total 24MiB, conversion 4M chars로 낮아졌다.
+- 보류: Android Expat 합성 F1/F2 계측 테스트는 APK까지 빌드됐지만 로컬 SDK에
+  emulator/AVD가 없어 미실행. release DOCX/PDF UI, 취소 이탈, 제한 heap 스크롤도
+  실제 기기 스모크가 필요하며 이 검증 전 Android 종결 판정은 보류한다.
 
 ### 2026-07-11 Codex (8839fce..HEAD)
 - 요지: 보안 강화 빌드를 기존 v1.2.0 자산에 덮어쓰지 않고 새 패치 릴리스로

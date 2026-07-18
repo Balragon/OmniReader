@@ -9,15 +9,15 @@ import java.io.OutputStream
 
 /** Shared resource and capability policy for untrusted DOCX imports. */
 data class DocxImportPolicy(
-    val maxCompressedBytes: Long = 50L * 1024L * 1024L,
+    val maxCompressedBytes: Long = 32L * 1024L * 1024L,
     val maxEntryCount: Int = 4_096,
-    val maxEntryBytes: Long = 24L * 1024L * 1024L,
-    val maxExpandedBytes: Long = 96L * 1024L * 1024L,
+    val maxEntryBytes: Long = 12L * 1024L * 1024L,
+    val maxExpandedBytes: Long = 64L * 1024L * 1024L,
     val maxSanitizedArchiveBytes: Long = 64L * 1024L * 1024L,
     val maxAssetCount: Int = 256,
-    val maxAssetBytes: Long = 8L * 1024L * 1024L,
-    val maxTotalAssetBytes: Long = 32L * 1024L * 1024L,
-    val maxConversionCharacters: Int = 8 * 1024 * 1024,
+    val maxAssetBytes: Long = 6L * 1024L * 1024L,
+    val maxTotalAssetBytes: Long = 24L * 1024L * 1024L,
+    val maxConversionCharacters: Int = 4 * 1024 * 1024,
 ) {
     init {
         require(maxCompressedBytes > 0)
@@ -34,7 +34,8 @@ data class DocxImportPolicy(
 
 class DocxImportRejectedException(
     val reason: Reason,
-) : IOException(reason.message) {
+    cause: Throwable? = null,
+) : IOException(reason.message, cause) {
     enum class Reason(val message: String) {
         COMPRESSED_INPUT_LIMIT("The DOCX exceeds the compressed input limit"),
         ENTRY_COUNT_LIMIT("The DOCX contains too many archive entries"),
@@ -44,6 +45,10 @@ class DocxImportRejectedException(
         DUPLICATE_ENTRY("The DOCX contains duplicate archive entries"),
         UNSAFE_PART_NAME("The DOCX contains an unsafe archive path"),
         UNSUPPORTED_XML_ENCODING("The DOCX contains an unsupported XML encoding"),
+        MALFORMED_ARCHIVE("The DOCX archive is malformed"),
+        MALFORMED_XML("A DOCX XML part is malformed"),
+        XML_PARSER_UNAVAILABLE("A required secure XML parser feature is unavailable"),
+        TEMPORARY_STORAGE_UNAVAILABLE("Temporary storage is unavailable for DOCX import"),
         DTD_NOT_ALLOWED("DOCX XML declarations that can load entities are not allowed"),
         EXTERNAL_RELATIONSHIP("External DOCX relationships are not allowed"),
         ASSET_COUNT_LIMIT("The DOCX contains too many embedded images"),
@@ -107,12 +112,14 @@ internal class LimitedOutputStream(
 internal fun InputStream.readBytesLimited(
     limit: Long,
     reason: DocxImportRejectedException.Reason,
+    checkCancelled: () -> Unit = {},
 ): ByteArray {
     val initialSize = limit.coerceAtMost(DEFAULT_BUFFER_SIZE.toLong()).toInt()
     val output = ByteArrayOutputStream(initialSize)
     val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
     var total = 0L
     while (true) {
+        checkCancelled()
         val read = read(buffer)
         if (read < 0) break
         if (read == 0) continue

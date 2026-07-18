@@ -73,6 +73,7 @@ import dev.gold.mdvault.document.DocumentTypeDetector
 import dev.gold.mdvault.document.DocxToMarkdownImporter
 import dev.gold.mdvault.docx.DocxImportRejectedException
 import dev.gold.mdvault.markdown.MarkdownEngine
+import dev.gold.mdvault.markdown.JsoupHtmlCleaner
 import dev.gold.mdvault.settings.ReaderSettingsRepository
 import dev.gold.mdvault.storage.BoundedTextRead
 import dev.gold.mdvault.storage.RecentFilesRepository
@@ -84,7 +85,13 @@ import dev.gold.mdvault.ui.VaultErrorUi
 import dev.gold.mdvault.ui.text
 import dev.gold.mdvault.ui.toVaultErrorUi
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runInterruptible
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileNotFoundException
@@ -133,16 +140,29 @@ fun SingleDocumentViewerScreen(
                 displayName = name
                 documentKey = "doc:$name:${resolver.openableSize(uri) ?: -1}"
                 val kind = DocumentTypeDetector.detect(name, resolver.getType(uri))
-                val loaded = loadDocument(
-                    kind = kind,
-                    displayName = name,
-                    uri = uri,
-                    resolver = resolver,
-                    context = context,
-                    markdownEngine = markdownEngine,
-                    docxImporter = docxImporter,
-                    cacheDir = context.cacheDir,
-                )
+                val loadingContext = currentCoroutineContext()
+                val checkCancelled = {
+                    loadingContext.ensureActive()
+                    if (Thread.currentThread().isInterrupted) throw CancellationException("DOCX import interrupted")
+                }
+                val load = {
+                    loadDocument(
+                        kind = kind,
+                        displayName = name,
+                        uri = uri,
+                        resolver = resolver,
+                        context = context,
+                        markdownEngine = markdownEngine,
+                        docxImporter = docxImporter,
+                        cacheDir = context.cacheDir,
+                        checkCancelled = checkCancelled,
+                    )
+                }
+                val loaded = if (kind == DocumentKind.DOCX) {
+                    DOCX_IMPORT_SEMAPHORE.withPermit { runInterruptible { load() } }
+                } else {
+                    load()
+                }
                 notice = loaded.notice
                 // 다시 열 수 있는(영구 권한을 가진) 문서만 최근 목록에 남긴다.
                 // 파일 앱 탭(VIEW)의 일시적 권한은 재실행 후 소멸하므로 기록하지 않아
@@ -151,6 +171,8 @@ fun SingleDocumentViewerScreen(
                     runCatching { recentFiles.record(uri, name, kind.name) }
                 }
                 loaded.state
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: VaultError) {
                 Log.w(TAG, "Failed to open document", e)
                 ViewerState.Error(e.toVaultErrorUi())
@@ -170,7 +192,8 @@ fun SingleDocumentViewerScreen(
                 Log.w(TAG, "Rejected unsafe or oversized DOCX: ${e.reason}")
                 ViewerState.Error(VaultErrorUi(messageRes = R.string.viewer_docx_rejected))
             } catch (e: Exception) {
-                ViewerState.Error(VaultErrorUi(rawMessage = e.message ?: e.javaClass.simpleName))
+                Log.w(TAG, "Unexpected failure while opening document", e)
+                ViewerState.Error(VaultErrorUi(messageRes = R.string.error_unknown))
             }
         }
     }
@@ -239,10 +262,13 @@ fun SingleDocumentViewerScreen(
                                     output.write(savableMarkdown.toByteArray(Charsets.UTF_8))
                                 }
                                 context.getString(R.string.viewer_md_saved_no_images)
+                            } catch (e: CancellationException) {
+                                throw e
                             } catch (e: Exception) {
+                                Log.w(TAG, "Failed to save Markdown", e)
                                 context.getString(
                                     R.string.viewer_save_failed,
-                                    e.message ?: e.javaClass.simpleName,
+                                    context.getString(R.string.error_unknown),
                                 )
                             }
                         }
@@ -274,10 +300,13 @@ fun SingleDocumentViewerScreen(
                                         result.totalAssets,
                                     )
                                 }
+                            } catch (e: CancellationException) {
+                                throw e
                             } catch (e: Exception) {
+                                Log.w(TAG, "Failed to save Markdown package", e)
                                 context.getString(
                                     R.string.viewer_save_failed,
-                                    e.message ?: e.javaClass.simpleName,
+                                    context.getString(R.string.error_unknown),
                                 )
                             }
                         }
@@ -479,6 +508,8 @@ private fun FullscreenImageContent(
                         targetHeightPx = targetHeightPx,
                     )
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: SecurityException) {
                 Log.w(TAG, "Permission lost while opening image", e)
                 error = VaultError.PermissionLost().toVaultErrorUi()
@@ -495,7 +526,8 @@ private fun FullscreenImageContent(
                 Log.w(TAG, "Failed to decode image", e)
                 error = VaultErrorUi(messageRes = R.string.viewer_image_decode_failed)
             } catch (e: Exception) {
-                error = VaultErrorUi(rawMessage = e.message ?: e.javaClass.simpleName)
+                Log.w(TAG, "Unexpected failure while opening image", e)
+                error = VaultErrorUi(messageRes = R.string.error_unknown)
             }
         }
 
@@ -701,6 +733,7 @@ private fun loadDocument(
     markdownEngine: MarkdownEngine,
     docxImporter: DocxToMarkdownImporter,
     cacheDir: File,
+    checkCancelled: () -> Unit = {},
 ): LoadedViewerDocument = when (kind) {
     DocumentKind.PDF -> LoadedViewerDocument(ViewerState.Pdf)
 
@@ -748,10 +781,10 @@ private fun loadDocument(
     }
 
     DocumentKind.HTML -> {
-        // JS 비활성 + 네트워크 차단 상태로 원본 그대로 표시 (스타일 보존)
         val html = resolver.readTextPreview(uri)
+        val cleaned = JsoupHtmlCleaner().clean(html.text)
         LoadedViewerDocument(
-            state = ViewerState.Web(html.text, { null }),
+            state = ViewerState.Web(PreviewHtmlBuilder.build(cleaned.html), { null }),
             notice = html.truncationNotice(context),
         )
     }
@@ -769,30 +802,43 @@ private fun loadDocument(
                 ),
             )
         } else {
+            checkCancelled()
             val digest = MessageDigest.getInstance("SHA-256")
                 .digest(uri.toString().toByteArray())
                 .joinToString("") { "%02x".format(it) }
                 .take(12)
-            val assetRoot = File(cacheDir, "opened/$digest").apply { mkdirs() }
-            val input = resolver.openInputStream(uri) ?: throw FileNotFoundException("$uri")
-            val imported = input.use { stream ->
-                docxImporter.import(stream) { relativePath, _, bytes ->
-                    val target = assetRoot.resolveSafeAsset(relativePath)
-                    target.parentFile?.mkdirs()
-                    target.writeBytes(bytes)
+            val openedRoot = File(cacheDir, "opened")
+            DocxAssetTransaction(openedRoot, digest).use { transaction ->
+                val input = resolver.openInputStream(uri) ?: throw FileNotFoundException("$uri")
+                val imported = input.use { stream ->
+                    docxImporter.import(stream, checkCancelled) { relativePath, _, bytes ->
+                        checkCancelled()
+                        val target = transaction.stagingDirectory.resolveSafeAsset(relativePath)
+                        if (target.parentFile?.isDirectory != true && target.parentFile?.mkdirs() != true) {
+                            throw IOException("Couldn't create DOCX asset directory")
+                        }
+                        target.outputStream().use { it.write(bytes) }
+                        checkCancelled()
+                    }
                 }
+                checkCancelled()
+                val previewHtml = PreviewHtmlBuilder.build(markdownEngine.toHtml(imported.markdown))
+                checkCancelled()
+                val assetRoot = transaction.commit()
+                runCatching { DocxAssetTransaction.evict(openedRoot, assetRoot) }
+                    .onFailure { Log.w(TAG, "Failed to evict old DOCX assets", it) }
+                LoadedViewerDocument(
+                    ViewerState.Web(
+                        html = previewHtml,
+                        loadAsset = { relativePath ->
+                            assetRoot.resolveSafeAssetOrNull(relativePath)?.takeIf { it.isFile }?.inputStream()
+                        },
+                        savableMarkdown = imported.markdown,
+                        assetRoot = assetRoot,
+                        assetRelativePaths = imported.assets.map { it.relativePath },
+                    ),
+                )
             }
-            LoadedViewerDocument(
-                ViewerState.Web(
-                    html = PreviewHtmlBuilder.build(markdownEngine.toHtml(imported.markdown)),
-                    loadAsset = { relativePath ->
-                        assetRoot.resolveSafeAssetOrNull(relativePath)?.takeIf { it.isFile }?.inputStream()
-                    },
-                    savableMarkdown = imported.markdown,
-                    assetRoot = assetRoot,
-                    assetRelativePaths = imported.assets.map { it.relativePath },
-                ),
-            )
         }
     }
 
@@ -1121,7 +1167,8 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
 }
 
 private const val TEXT_PREVIEW_MAX_BYTES = 4 * 1024 * 1024
-private const val DOCX_IMPORT_MAX_BYTES = 50L * 1024L * 1024L
+private const val DOCX_IMPORT_MAX_BYTES = 32L * 1024L * 1024L
+private val DOCX_IMPORT_SEMAPHORE = Semaphore(permits = 1)
 private const val IMAGE_SCREEN_MULTIPLIER = 2
 private const val MARKDOWN_MIME_TYPE = "text/markdown"
 private const val BINARY_MIME_TYPE = "application/octet-stream"

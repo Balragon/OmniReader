@@ -6,28 +6,31 @@ import java.io.File
 
 /**
  * CLAUDE.md 규칙 3 강제: markdown/, docx/ 패키지는 순수 JVM이어야 한다.
- * android.*, androidx.* import가 발견되면 빌드를 실패시킨다.
+ * android.*, androidx.* 참조가 발견되거나 감시 대상 source directory가 사라지면 빌드를 실패시킨다.
  * 이 테스트를 약화하거나 삭제하지 않는다.
  */
 class ConversionPurityTest {
 
-    private val forbidden = Regex("""^import\s+(android|androidx)\.""")
+    private val forbidden = Regex("""\b(?:android|androidx)\.""")
     private val pureDirs = listOf(
         "src/main/java/dev/gold/mdvault/markdown",
         "src/main/java/dev/gold/mdvault/docx",
     )
 
     @Test
-    fun `markdown and docx packages must not import Android APIs`() {
+    fun `markdown and docx packages must not reference Android APIs`() {
         val violations = mutableListOf<String>()
         for (dir in pureDirs) {
             val root = File(dir)
-            if (!root.exists()) continue
+            if (!root.isDirectory) {
+                violations += "$dir: required purity source directory is missing"
+                continue
+            }
             root.walkTopDown()
                 .filter { it.isFile && (it.extension == "kt" || it.extension == "java") }
                 .forEach { file ->
                     file.readLines().forEachIndexed { index, line ->
-                        if (forbidden.containsMatchIn(line.trim())) {
+                        if (forbidden.containsMatchIn(line)) {
                             violations += "${file.path}:${index + 1}: ${line.trim()}"
                         }
                     }

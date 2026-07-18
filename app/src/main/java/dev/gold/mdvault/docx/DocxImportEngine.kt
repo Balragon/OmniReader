@@ -25,5 +25,9 @@ data class HtmlImportResult(
 )
 
 interface DocxImportEngine {
-    fun importDocx(input: InputStream, imageSink: ImageSink): HtmlImportResult
+    fun importDocx(
+        input: InputStream,
+        checkCancelled: () -> Unit = {},
+        imageSink: ImageSink,
+    ): HtmlImportResult
 }

@@ -25,12 +25,20 @@ class DocxToMarkdownImporter(
         val assets: List<ExtractedAsset>,
     )
 
-    fun import(input: InputStream, imageSink: ImageSink): ImportedDocument {
-        val htmlResult = docxImportEngine.importDocx(input, imageSink)
+    fun import(
+        input: InputStream,
+        checkCancelled: () -> Unit = {},
+        imageSink: ImageSink,
+    ): ImportedDocument {
+        checkCancelled()
+        val htmlResult = docxImportEngine.importDocx(input, checkCancelled, imageSink)
+        checkCancelled()
         requireWithinConversionLimit(htmlResult.html)
         val cleaned = htmlCleaner.clean(htmlResult.html)
+        checkCancelled()
         requireWithinConversionLimit(cleaned.html)
-        val markdown = markdownEngine.fromHtml(cleaned.html)
+        val markdown = markdownEngine.fromSanitizedHtml(cleaned.html)
+        checkCancelled()
         requireWithinConversionLimit(markdown)
         return ImportedDocument(
             markdown = markdown,

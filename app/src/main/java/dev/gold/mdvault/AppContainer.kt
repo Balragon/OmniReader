@@ -21,7 +21,10 @@ class AppContainer(context: android.content.Context) {
     val htmlCleaner: JsoupHtmlCleaner = JsoupHtmlCleaner()
     val markdownEngine: MarkdownEngine = FlexmarkMarkdownEngine(htmlCleaner)
     private val docxImportPolicy = DocxImportPolicy()
-    val docxImportEngine: DocxImportEngine = MammothDocxImportEngine(docxImportPolicy)
+    val docxImportEngine: DocxImportEngine = MammothDocxImportEngine(
+        policy = docxImportPolicy,
+        temporaryDirectory = java.io.File(applicationContext.cacheDir, "docx-work"),
+    )
     val docxToMarkdownImporter: DocxToMarkdownImporter = DocxToMarkdownImporter(
         docxImportEngine = docxImportEngine,
         htmlCleaner = htmlCleaner,

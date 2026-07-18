@@ -43,4 +43,16 @@ class ImageDimensionReaderTest {
         assertNull(ImageDimensionReader.read("not an image at all".toByteArray()))
         assertNull(ImageDimensionReader.read(ByteArray(0)))
     }
+
+    @Test
+    fun `rejects truncated JPEG marker padding without reading past the buffer`() {
+        val variants = listOf(
+            byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xFF.toByte()),
+            byteArrayOf(
+                0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xFF.toByte(), 0xC0.toByte(),
+            ),
+        )
+
+        variants.forEach { assertNull(ImageDimensionReader.read(it)) }
+    }
 }

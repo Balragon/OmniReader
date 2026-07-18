@@ -30,8 +30,11 @@ class FlexmarkMarkdownEngine(
 
     override fun fromHtml(html: String): String {
         val cleaned = htmlCleaner.clean(html).html
-        return htmlConverter.convert(cleaned).trimEnd() + "\n"
+        return fromSanitizedHtml(cleaned)
     }
+
+    override fun fromSanitizedHtml(html: String): String =
+        htmlConverter.convert(html).trimEnd() + "\n"
 
     override fun parseToAst(markdown: String): Node = parser.parse(markdown)
 
